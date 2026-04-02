@@ -289,7 +289,7 @@
       <span class="err-badge" id="logs-err-badge" style="display:none">0</span>
     </div>
     <button class="btn btn-ghost" onclick="openAddToken()">+ Add Token</button>
-    <button class="btn btn-teal"  onclick="openAddWatcher()">+ Add Rule</button>
+    <button class="btn btn-teal"  onclick="openAddWatcher()">+ Add Watcher</button>
     <button class="btn btn-primary" onclick="openNewRun()">&#9654; Manual Run</button>
   </div>
 </header>
@@ -319,14 +319,14 @@
     <!-- Queue (watchers) -->
     <div class="queue-section">
       <div class="section-header">
-        <span class="section-title">Queue &mdash; Auto-run Rules</span>
+        <span class="section-title">Watchers</span>
         <span class="count-badge" id="watcher-count">0</span>
       </div>
       <div class="section-body" id="watchers-body">
         <div class="empty-state" style="padding:1.25rem">
           <div class="empty-icon">&#128257;</div>
-          <div class="empty-title">No rules yet</div>
-          <div class="empty-sub">Click &ldquo;+ Add Rule&rdquo; to auto-run tools when tokens arrive</div>
+          <div class="empty-title">No watchers yet</div>
+          <div class="empty-sub">Click &ldquo;+ Add Watcher&rdquo; to auto-run tools when tokens arrive</div>
         </div>
       </div>
     </div>
@@ -341,7 +341,7 @@
         <div class="empty-state">
           <div class="empty-icon">&#128295;</div>
           <div class="empty-title">No runs yet</div>
-          <div class="empty-sub">Runs appear here when tokens trigger a rule</div>
+          <div class="empty-sub">Runs appear here when tokens trigger a watcher</div>
         </div>
       </div>
     </div>
@@ -443,12 +443,12 @@
 <div class="overlay hidden" id="add-watcher-overlay">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title">Add Auto-run Rule</span>
+      <span class="modal-title">Add Watcher</span>
       <button class="modal-close" onclick="closeAddWatcher()">&#10005;</button>
     </div>
     <div class="modal-body">
       <div class="callout">
-        Rules watch for incoming tokens. When a token whose <strong>type</strong> matches arrives via <code style="font-family:monospace;font-size:.8em">POST /add_token</code>, the tool runs automatically with that token as input.
+        Watchers watch for incoming tokens. When a token whose <strong>type</strong> matches arrives via <code style="font-family:monospace;font-size:.8em">POST /add_token</code>, the tool runs automatically with that token as input.
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -472,14 +472,14 @@
         <div class="tool-desc-box" id="aw-tool-desc"></div>
       </div>
       <div class="form-group">
-        <label class="form-label" for="aw-name">Rule Name <span class="form-hint">optional</span></label>
+        <label class="form-label" for="aw-name">Watcher Name <span class="form-hint">optional</span></label>
         <input type="text" id="aw-name" placeholder="auto-generated if left blank">
       </div>
       <div id="aw-params-section"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeAddWatcher()">Cancel</button>
-      <button class="btn btn-teal" onclick="submitAddWatcher()">Add Rule</button>
+      <button class="btn btn-teal" onclick="submitAddWatcher()">Add Watcher</button>
     </div>
   </div>
 </div>
@@ -673,7 +673,7 @@
     document.getElementById('watcher-count').textContent = list.length;
     var body = document.getElementById('watchers-body');
     body.innerHTML = list.length === 0
-      ? '<div class="empty-state" style="padding:1.25rem"><div class="empty-icon">&#128257;</div><div class="empty-title">No rules yet</div><div class="empty-sub">Click &ldquo;+ Add Rule&rdquo; to auto-run tools when tokens arrive</div></div>'
+      ? '<div class="empty-state" style="padding:1.25rem"><div class="empty-icon">&#128257;</div><div class="empty-title">No watchers yet</div><div class="empty-sub">Click &ldquo;+ Add Watcher&rdquo; to auto-run tools when tokens arrive</div></div>'
       : list.map(watcherHtml).join('');
   }
 
@@ -712,7 +712,7 @@
     document.getElementById('run-count').textContent = list.length;
     var body = document.getElementById('runs-body');
     body.innerHTML = list.length === 0
-      ? '<div class="empty-state"><div class="empty-icon">&#128295;</div><div class="empty-title">No runs yet</div><div class="empty-sub">Runs appear here when tokens trigger a rule</div></div>'
+      ? '<div class="empty-state"><div class="empty-icon">&#128295;</div><div class="empty-title">No runs yet</div><div class="empty-sub">Runs appear here when tokens trigger a watcher</div></div>'
       : list.map(runHtml).join('');
   }
 
@@ -1054,7 +1054,7 @@
       if (p.type === 'checkbox') { el.checked = !!w.parameters[p.name]; }
       else { el.value = w.parameters[p.name] !== undefined ? w.parameters[p.name] : (p.default || ''); }
     });
-    document.querySelector('#add-watcher-overlay .modal-title').textContent = 'Edit Rule';
+    document.querySelector('#add-watcher-overlay .modal-title').textContent = 'Edit Watcher';
     document.querySelector('#add-watcher-overlay .modal-footer .btn-teal').textContent = 'Save Changes';
     document.getElementById('add-watcher-overlay').classList.remove('hidden');
   }
@@ -1069,8 +1069,8 @@
     document.getElementById('aw-type').value = 'credential_object';
     document.getElementById('aw-tool-desc-group').style.display = 'none';
     document.getElementById('aw-params-section').innerHTML = '';
-    document.querySelector('#add-watcher-overlay .modal-title').textContent = 'Add Auto-run Rule';
-    document.querySelector('#add-watcher-overlay .modal-footer .btn-teal').textContent = 'Add Rule';
+    document.querySelector('#add-watcher-overlay .modal-title').textContent = 'Add Watcher';
+    document.querySelector('#add-watcher-overlay .modal-footer .btn-teal').textContent = 'Add Watcher';
     document.getElementById('add-watcher-overlay').classList.remove('hidden');
     sel.focus();
   }
