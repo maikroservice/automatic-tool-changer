@@ -2,6 +2,8 @@
 
 A lightweight operator dashboard for managing credentials (tokens), scheduling tool runs, and firing webhooks into a [Tracecat](https://tracecat.com) workflow.
 
+![automatic-tool-changer-v1.png](./automatic-tool-changerv1.png)
+
 ## What it does
 
 - **Tokens** — store credentials or other values used by tools (e.g. Confluence API keys)
