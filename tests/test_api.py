@@ -76,7 +76,7 @@ def test_list_tokens_multiple(client):
 
 def test_list_tools_returns_all_tools(client):
     tool_ids = {t["id"] for t in client.get("/tools").json()}
-    assert tool_ids == {"confluence_exporter"}
+    assert tool_ids == {"confluence_exporter", "jira_exporter"}
 
 
 def test_list_tools_have_required_fields(client):

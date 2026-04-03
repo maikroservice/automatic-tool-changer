@@ -1,0 +1,83 @@
+id: jira_exporter
+name: Jira Exporter
+description: >-
+  Export Jira issues to Markdown, HTML, or raw JSON. The token must be a
+  credential_object with url, email, and token (plus optional jira_type and
+  auth_type). Builds the jira-export CLI command.
+command: jira-export
+token_type: credential_object
+
+env:
+  JIRA_URL:   [url, jira_url]
+  JIRA_EMAIL: [email, jira_email]
+  JIRA_TOKEN: [token, api_token, jira_token]
+
+optional_env:
+  JIRA_TYPE:
+    from: [jira_type]
+    omit_if: ["", cloud]
+  JIRA_AUTH_TYPE:
+    from: [auth_type]
+    omit_if: ["", basic]
+
+args:
+  - type: scope
+    param: scope
+    value_param: scope_value
+
+  - type: flag
+    flag: --format
+    param: format
+
+  - type: flag
+    flag: --output
+    param: output_dir
+
+  - type: boolean
+    flag: --comments
+    param: comments
+
+  - type: boolean
+    flag: --force
+    param: force
+
+parameters:
+  - name: scope
+    type: select
+    label: Scope
+    options: [issue, project, board, jql]
+    default: project
+    required: true
+
+  - name: scope_value
+    type: text
+    label: Issue Key / Project Key / Board ID / JQL
+    default: ""
+    placeholder: "PROJ-123  or  PROJ  or  42  or  project = PROJ AND ..."
+    required: true
+
+  - name: format
+    type: select
+    label: Output Format
+    options: [md, html, raw]
+    default: md
+    required: true
+
+  - name: output_dir
+    type: text
+    label: Output Directory
+    default: ./export
+    placeholder: ./export
+    required: false
+
+  - name: comments
+    type: checkbox
+    label: Include issue comments
+    default: false
+    required: false
+
+  - name: force
+    type: checkbox
+    label: Force overwrite existing files
+    default: false
+    required: false

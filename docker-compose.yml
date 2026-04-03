@@ -3,15 +3,15 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: atc
-      POSTGRES_PASSWORD: atc
-      POSTGRES_DB: atc
+      POSTGRES_USER: ${POSTGRES_USER:-atc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atc}
+      POSTGRES_DB: ${POSTGRES_DB:-atc}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atc"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atc}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -20,7 +20,10 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://atc:atc@db:5432/atc
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-atc}:${POSTGRES_PASSWORD:-atc}@db:5432/${POSTGRES_DB:-atc}}
+      APP_TOKEN: ${APP_TOKEN:-}
+      TOOLS_DIR: ${TOOLS_DIR:-tools}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
     ports:
       - "8000:8000"
     depends_on:

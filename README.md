@@ -22,6 +22,8 @@ Browser (single-page app)
     ▼
 FastAPI (main.py)
     │
+    ├── tool_loader.py — loads tools from tools/*.yaml
+    │
     ├── SQLAlchemy async ORM
     │       ├── PostgreSQL (production)
     │       └── SQLite   (dev / fallback)
@@ -58,6 +60,8 @@ SQLite database is written to `./atc.db`.
 |---|---|---|
 | `DATABASE_URL` | `sqlite+aiosqlite:///./atc.db` | SQLAlchemy async connection string |
 | `PUBLIC_BASE_URL` | `http://localhost:8000/` | Base URL used to build the `callback_url` sent to Tracecat |
+| `APP_TOKEN` | *(auto-generated)* | Token required by privileged endpoints (`POST/DELETE /tools`). Auto-generated at startup if not set. |
+| `TOOLS_DIR` | `tools` | Directory where tool YAML definitions are loaded from |
 
 For PostgreSQL:
 ```
@@ -159,30 +163,111 @@ Every outbound webhook call is recorded with:
 
 Click **Webhook Log** in the header to view the call history. Failed calls show a red badge count and trigger a toast notification.
 
+## Tools
+
+Tools are defined as YAML files in the `tools/` directory. Each file describes the tool metadata, how to map credential fields to env vars, and how to assemble the CLI command.
+
+### Tool YAML schema
+
+```yaml
+id: my_tool                  # unique identifier, also used as the filename
+name: My Tool                # display name in the UI
+description: >-              # shown in the UI
+  What this tool does.
+command: my-tool-binary      # the executable to call
+token_type: credential_object  # hint shown in the UI (optional)
+
+# Required env vars — map ENV_VAR to credential field names.
+# The first non-empty field wins.
+env:
+  MY_URL:   [url, my_url]
+  MY_TOKEN: [token, api_token]
+
+# Optional env vars — same resolution but omit if empty or matches omit_if.
+optional_env:
+  MY_TYPE:
+    from: [my_type]
+    omit_if: ["", default_value]
+
+# CLI argument list — processed in order.
+# Types:
+#   flag     --flag value           always included (unless omit_if_empty: true)
+#   boolean  --flag                 included only when param is truthy
+#   scope    --{param_value} {value_param}
+#            e.g. scope=project, scope_value=PROJ  →  --project PROJ
+args:
+  - type: scope
+    param: scope
+    value_param: scope_value
+  - type: flag
+    flag: --format
+    param: format
+  - type: flag
+    flag: --output
+    param: output_dir
+    omit_if_empty: true
+  - type: boolean
+    flag: --force
+    param: force
+
+# Parameter definitions — same structure the frontend uses to render the form.
+parameters:
+  - name: scope
+    type: select          # select | text | checkbox | textarea
+    label: Scope
+    options: [issue, project]
+    default: project
+    required: true
+  - name: force
+    type: checkbox
+    label: Force overwrite
+    default: false
+    required: false
+```
+
+### Registering a new tool
+
+Drop a `.yaml` file into `tools/` and restart, **or** use the UI:
+
+1. Click **+ Add Tool** in the header
+2. Choose your `.yaml` file
+3. The tool appears immediately in all tool dropdowns for all connected browsers
+
+Removing a tool: call `DELETE /tools/{id}` from the UI (the delete button appears in a future tools management panel), or remove the file from `tools/` and restart.
+
+### Built-in tools
+
+| File | Tool | Command |
+|---|---|---|
+| `tools/confluence_exporter.yaml` | Confluence Exporter | `confluence-exporter` |
+| `tools/jira_exporter.yaml` | Jira Exporter | `jira-export` |
+
 ## API reference
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/campaigns` | Create a campaign |
-| `GET` | `/campaigns` | List all campaigns |
-| `PATCH` | `/campaigns/{id}/activate` | Set active campaign |
-| `PATCH` | `/campaigns/{id}` | Update campaign |
-| `DELETE` | `/campaigns/{id}` | Delete campaign |
-| `POST` | `/add_token` | Add a token |
-| `GET` | `/tokens` | List tokens (active campaign) |
-| `PATCH` | `/tokens/{id}` | Update a token |
-| `POST` | `/watchers` | Create a rule |
-| `GET` | `/watchers` | List rules (active campaign) |
-| `PATCH` | `/watchers/{id}/toggle` | Pause / resume a rule |
-| `PATCH` | `/watchers/{id}` | Update a rule |
-| `DELETE` | `/watchers/{id}` | Delete a rule |
-| `GET` | `/tools` | List available tools |
-| `POST` | `/runs` | Create a manual run |
-| `GET` | `/runs` | List runs (active campaign) |
-| `POST` | `/runs/{id}/trigger` | Manually fire webhook for a run |
-| `POST` | `/runs/{id}/callback` | Receive Tracecat result callback |
-| `GET` | `/webhook-logs` | List webhook call log (active campaign) |
-| `WS` | `/ws` | Real-time updates |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/campaigns` | — | Create a campaign |
+| `GET` | `/campaigns` | — | List all campaigns |
+| `PATCH` | `/campaigns/{id}/activate` | — | Set active campaign |
+| `PATCH` | `/campaigns/{id}` | — | Update campaign |
+| `DELETE` | `/campaigns/{id}` | — | Delete campaign |
+| `POST` | `/add_token` | — | Add a token |
+| `GET` | `/tokens` | — | List tokens (active campaign) |
+| `PATCH` | `/tokens/{id}` | — | Update a token |
+| `POST` | `/watchers` | — | Create a watcher |
+| `GET` | `/watchers` | — | List watchers (active campaign) |
+| `PATCH` | `/watchers/{id}/toggle` | — | Pause / resume a watcher |
+| `PATCH` | `/watchers/{id}` | — | Update a watcher |
+| `DELETE` | `/watchers/{id}` | — | Delete a watcher |
+| `GET` | `/tools` | — | List available tools |
+| `POST` | `/tools` | `X-ATC-Token` | Upload a tool YAML |
+| `DELETE` | `/tools/{id}` | `X-ATC-Token` | Remove a tool |
+| `POST` | `/runs` | — | Create a manual run |
+| `GET` | `/runs` | — | List runs (active campaign) |
+| `POST` | `/runs/{id}/trigger` | — | Manually fire webhook for a run |
+| `POST` | `/runs/{id}/callback` | — | Receive Tracecat result callback |
+| `GET` | `/webhook-logs` | — | List webhook call log (active campaign) |
+| `WS` | `/ws` | — | Real-time updates |
 
 ## Running tests
 

@@ -1,0 +1,78 @@
+id: confluence_exporter
+name: Confluence Exporter
+description: >-
+  Export Confluence pages or spaces. The token must be a credential_object
+  with url, email, api_token, and optionally auth_type. Builds the
+  confluence-exporter CLI command.
+command: confluence-exporter
+token_type: credential_object
+
+env:
+  CONFLUENCE_URL:       [url, confluence_url]
+  CONFLUENCE_AUTH_TYPE: [auth_type]
+  CONFLUENCE_EMAIL:     [email, confluence_email]
+  CONFLUENCE_TOKEN:     [api_token, confluence_token]
+
+args:
+  - type: scope
+    param: scope
+    value_param: scope_value
+
+  - type: flag
+    flag: --format
+    param: format
+
+  - type: flag
+    flag: --output
+    param: output_dir
+
+  - type: flag
+    flag: --depth
+    param: depth
+    omit_if_empty: true
+
+  - type: boolean
+    flag: --force
+    param: force
+
+parameters:
+  - name: scope
+    type: select
+    label: Scope
+    options: [space, page, recursive]
+    default: space
+    required: true
+
+  - name: scope_value
+    type: text
+    label: Space Key / Page URL or ID
+    default: ""
+    placeholder: "MYSPACE  or  https://…/pages/123456"
+    required: true
+
+  - name: format
+    type: select
+    label: Output Format
+    options: [md, html, raw]
+    default: md
+    required: true
+
+  - name: output_dir
+    type: text
+    label: Output Directory
+    default: ./output
+    placeholder: ./output
+    required: false
+
+  - name: depth
+    type: text
+    label: Max Depth
+    default: ""
+    placeholder: "unlimited (recursive scope only)"
+    required: false
+
+  - name: force
+    type: checkbox
+    label: Force overwrite existing files
+    default: false
+    required: false

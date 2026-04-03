@@ -1,0 +1,62 @@
+id: my_tool
+name: My Tool
+description: >-
+  What this tool does — shown in the UI.
+command: my-tool-binary
+
+# Map env vars to credential fields (first non-empty field wins)
+env:
+  MY_URL:   [url, my_url]
+  MY_EMAIL: [email]
+  MY_TOKEN: [token, api_token]
+
+# Optional env vars — omit if empty or matches a default value
+optional_env:
+  MY_TYPE:
+    from: [my_type]
+    omit_if: ["", default]
+
+# CLI arguments (scope, flag, boolean types)
+args:
+  - type: scope        # --{scope_value} {value_param}
+    param: scope
+    value_param: scope_value
+  - type: flag         # --flag value
+    flag: --format
+    param: format
+  - type: flag
+    flag: --output
+    param: output_dir
+    omit_if_empty: true
+  - type: boolean      # --flag (only when truthy)
+    flag: --force
+    param: force
+
+parameters:
+  - name: scope
+    type: select
+    label: Scope
+    options: [project, issue]
+    default: project
+    required: true
+  - name: scope_value
+    type: text
+    label: Project / Issue ID
+    default: ""
+    required: true
+  - name: format
+    type: select
+    label: Format
+    options: [md, html, raw]
+    default: md
+    required: true
+  - name: output_dir
+    type: text
+    label: Output Directory
+    default: ./output
+    required: false
+  - name: force
+    type: checkbox
+    label: Force overwrite
+    default: false
+    required: false

@@ -3,17 +3,32 @@ import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+import yaml
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import database as db
+import tool_loader
 from database import engine, init_db
 
+import secrets
+
+import secrets as _secrets
+
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000/")
+TOOLS_DIR = os.getenv("TOOLS_DIR", "tools")
+
+# Token required by privileged endpoints (POST/DELETE /tools).
+# Set APP_TOKEN in .env to pin a value; otherwise a fresh token is generated each start.
+APP_TOKEN: str = os.getenv("APP_TOKEN") or _secrets.token_hex(64)
+
+# Token issued to the UI via WebSocket init — required for privileged endpoints.
+APP_TOKEN = secrets.token_hex(32)
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────
 
@@ -28,63 +43,23 @@ app = FastAPI(title="Automatic Tool Changer", lifespan=lifespan)
 # ── In-memory WebSocket list (not persisted) ───────────────────────────────────
 active_ws: list[WebSocket] = []
 
-# ── Tool registry ──────────────────────────────────────────────────────────────
-TOOLS: dict[str, dict] = {
-    "confluence_exporter": {
-        "id": "confluence_exporter",
-        "name": "Confluence Exporter",
-        "description": "Export Confluence pages or spaces. The token must be a credential_object with url, email, api_token, and optionally auth_type. Builds the confluence-exporter CLI command.",
-        "parameters": [
-            {
-                "name": "scope",
-                "type": "select",
-                "label": "Scope",
-                "options": ["space", "page", "recursive"],
-                "default": "space",
-                "required": True,
-            },
-            {
-                "name": "scope_value",
-                "type": "text",
-                "label": "Space Key / Page URL or ID",
-                "default": "",
-                "placeholder": "MYSPACE  or  https://…/pages/123456",
-                "required": True,
-            },
-            {
-                "name": "format",
-                "type": "select",
-                "label": "Output Format",
-                "options": ["md", "html", "raw"],
-                "default": "md",
-                "required": True,
-            },
-            {
-                "name": "output_dir",
-                "type": "text",
-                "label": "Output Directory",
-                "default": "./output",
-                "placeholder": "./output",
-                "required": False,
-            },
-            {
-                "name": "depth",
-                "type": "text",
-                "label": "Max Depth",
-                "default": "",
-                "placeholder": "unlimited (recursive scope only)",
-                "required": False,
-            },
-            {
-                "name": "force",
-                "type": "checkbox",
-                "label": "Force overwrite existing files",
-                "default": False,
-                "required": False,
-            },
-        ],
-    },
-}
+# ── Tool registry (loaded from YAML tool definitions) ─────────────────────────
+# TOOLS stores the full tool config.  Use _tool_api(t) to get the
+# API-safe subset (id / name / description / parameters).
+TOOLS: dict[str, dict] = {}
+
+
+def _reload_tools() -> None:
+    _, full = tool_loader.load_tools(TOOLS_DIR)
+    TOOLS.clear()
+    TOOLS.update(full)
+
+
+def _tool_api(t: dict) -> dict:
+    return {k: t[k] for k in ("id", "name", "description", "parameters") if k in t}
+
+
+_reload_tools()
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
@@ -160,38 +135,10 @@ async def broadcast(message: dict) -> None:
 # ── Tool execution ─────────────────────────────────────────────────────────────
 
 def execute_tool(tool_id: str, values: list[Any], params: dict) -> Any:
-    if tool_id == "confluence_exporter":
-        scope     = params.get("scope", "space")
-        scope_val = params.get("scope_value", "")
-        fmt       = params.get("format", "md")
-        out_dir   = params.get("output_dir", "./output")
-        depth     = params.get("depth", "")
-        force     = params.get("force") in (True, "true", "on", "yes", "1")
-
-        commands = []
-        for v in values:
-            creds = v if isinstance(v, dict) else {}
-            url        = creds.get("url", creds.get("confluence_url", ""))
-            email      = creds.get("email", creds.get("confluence_email", ""))
-            api_token  = creds.get("api_token", creds.get("confluence_token", ""))
-            auth_type  = creds.get("auth_type", "basic")
-
-            env = (
-                f"CONFLUENCE_URL={url} "
-                f"CONFLUENCE_AUTH_TYPE={auth_type} "
-                f"CONFLUENCE_EMAIL={email} "
-                f"CONFLUENCE_TOKEN={api_token}"
-            )
-            args = f"--{scope} {scope_val} --format {fmt} --output {out_dir}"
-            if depth:
-                args += f" --depth {depth}"
-            if force:
-                args += " --force"
-
-            commands.append(f"{env} confluence-exporter {args}")
-        return commands
-
-    raise ValueError(f"Unknown tool: {tool_id}")
+    tool = TOOLS.get(tool_id)
+    if not tool:
+        raise ValueError(f"Unknown tool: {tool_id}")
+    return tool_loader.build_commands(tool, values, params)
 
 
 async def run_in_background(run_id: str) -> None:
@@ -531,9 +478,50 @@ async def update_watcher(watcher_id: str, req: UpdateWatcherRequest):
 
 # ── Tool endpoints ─────────────────────────────────────────────────────────────
 
+def _require_app_token(x_atc_token: str = Header(...)):
+    if not _secrets.compare_digest(x_atc_token, APP_TOKEN):
+        raise HTTPException(403, "Invalid or missing app token")
+
+
 @app.get("/tools", summary="List available tools")
 async def list_tools():
-    return list(TOOLS.values())
+    return [_tool_api(t) for t in TOOLS.values()]
+
+
+@app.post("/tools", summary="Upload a tool YAML",
+          dependencies=[Depends(_require_app_token)])
+async def upload_tool(file: UploadFile):
+    content = await file.read()
+    try:
+        config = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        raise HTTPException(400, f"Invalid YAML: {exc}")
+
+    errors = tool_loader.validate_tool(config or {})
+    if errors:
+        raise HTTPException(400, {"errors": errors})
+
+    tool_id = config["id"]
+    path = Path(TOOLS_DIR) / f"{tool_id}.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+    _reload_tools()
+    await broadcast({"type": "tools_updated", "tools": [_tool_api(t) for t in TOOLS.values()]})
+    return _tool_api(TOOLS[tool_id])
+
+
+@app.delete("/tools/{tool_id}", summary="Remove a tool",
+            dependencies=[Depends(_require_app_token)])
+async def delete_tool(tool_id: str):
+    if tool_id not in TOOLS:
+        raise HTTPException(404, "Tool not found")
+    path = Path(TOOLS_DIR) / f"{tool_id}.yaml"
+    if path.exists():
+        path.unlink()
+    _reload_tools()
+    await broadcast({"type": "tools_updated", "tools": [_tool_api(t) for t in TOOLS.values()]})
+    return {"status": "deleted"}
 
 
 # ── Run endpoints ──────────────────────────────────────────────────────────────
@@ -641,9 +629,10 @@ async def websocket_endpoint(ws: WebSocket):
         "active_campaign_id": active_id,
         "tokens": tokens,
         "runs": runs,
-        "tools": list(TOOLS.values()),
+        "tools": [_tool_api(t) for t in TOOLS.values()],
         "watchers": watchers,
         "webhook_logs": webhook_logs,
+        "app_token": APP_TOKEN,
     })
 
     try:
