@@ -394,40 +394,25 @@
       <button class="modal-close" onclick="closeAddToken()">&#10005;</button>
     </div>
     <div class="modal-body">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label" for="at-name">Name <span class="form-hint">required</span></label>
-          <input type="text" id="at-name" placeholder="e.g. company-confluence">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="at-type">Type</label>
-          <select id="at-type">
-            <option value="credential_object">credential_object — {url, email, api_token, auth_type}</option>
-            <option value="text">text</option>
-            <option value="json">json</option>
-            <option value="number">number</option>
-          </select>
-        </div>
+      <div class="form-group">
+        <label class="form-label" for="at-name">Name <span class="form-hint">required</span></label>
+        <input type="text" id="at-name" placeholder="e.g. company-confluence">
       </div>
       <div class="form-group">
-        <label class="form-label">Load from YAML <span class="form-hint">optional</span></label>
+        <label class="form-label">Load from YAML <span class="form-hint">optional — auto-fills fields below</span></label>
         <div class="yaml-zone" onclick="document.getElementById('at-yaml-file').click()">
           <span style="font-size:1.1rem">&#128196;</span>
           <span class="yaml-zone-text"><strong>Click to upload</strong> a .yaml / .yml / .confluencerc file</span>
           <input type="file" id="at-yaml-file" accept=".yaml,.yml,.confluencerc,.rc,text/*" onchange="onYamlFileChange(event)">
         </div>
       </div>
-      <div class="divider">or enter value manually</div>
+      <div class="divider">or enter credentials manually</div>
       <div class="form-group">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
-          <label class="form-label" style="margin:0">Value</label>
-          <div class="value-tabs">
-            <button class="val-tab active" id="vt-text" onclick="setValTab('text')">Text</button>
-            <button class="val-tab" id="vt-json" onclick="setValTab('json')">JSON / YAML</button>
-          </div>
+          <label class="form-label" style="margin:0">Credential fields <span class="form-hint">key / value pairs</span></label>
+          <button class="btn btn-ghost btn-sm" onclick="addCredRow('','')">+ Add field</button>
         </div>
-        <input  type="text"  id="at-value-text" placeholder="plain text value">
-        <textarea            id="at-value-json" style="display:none;font-family:monospace;font-size:.78rem" placeholder='{"url":"https://...","email":"...","api_token":"...","auth_type":"basic"}'></textarea>
+        <div id="at-cred-rows" style="display:flex;flex-direction:column;gap:.3rem"></div>
       </div>
       <div class="form-group">
         <label class="form-label">Metadata <span class="form-hint">optional key=value pairs</span></label>
@@ -460,16 +445,7 @@
             <option value="">Select a tool&#8230;</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label" for="aw-type">Trigger on token type</label>
-          <select id="aw-type">
-            <option value="credential_object">credential_object — {url, email, api_token, auth_type}</option>
-            <option value="text">text</option>
-            <option value="json">json</option>
-            <option value="number">number</option>
-            <option value="*">* (any type)</option>
-          </select>
-        </div>
+        <input type="hidden" id="aw-type" value="credential_object">
       </div>
       <div id="aw-tool-desc-group" style="display:none" class="form-group">
         <div class="tool-desc-box" id="aw-tool-desc"></div>
@@ -604,7 +580,6 @@
   var _logErrCount = 0;
   var _appToken = '';
   var ws = null;
-  var valTab = 'text';
 
   // ── WebSocket ───────────────────────────────────────────────────────────────
   function connect() {
@@ -840,22 +815,35 @@
   // ── Add Token Modal ─────────────────────────────────────────────────────────
   function closeAddToken() { document.getElementById('add-token-overlay').classList.add('hidden'); }
 
-  function setValTab(tab) {
-    valTab = tab;
-    document.getElementById('vt-text').className = 'val-tab' + (tab==='text' ? ' active' : '');
-    document.getElementById('vt-json').className = 'val-tab' + (tab==='json' ? ' active' : '');
-    document.getElementById('at-value-text').style.display = tab==='text' ? '' : 'none';
-    document.getElementById('at-value-json').style.display = tab==='json' ? '' : 'none';
+  function addCredRow(key, val) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr auto;gap:.35rem;align-items:center';
+    row.innerHTML = '<input type="text" placeholder="e.g. url" value="'+esc(key||'')+'" style="padding:.4rem .6rem;font-size:.8rem;font-family:monospace">'
+      + '<input type="text" placeholder="value" value="'+esc(val||'')+'" style="padding:.4rem .6rem;font-size:.8rem">'
+      + '<button class="btn btn-ghost btn-sm" style="padding:.35rem .5rem" onclick="this.closest(\'div\').remove()">&#10005;</button>';
+    document.getElementById('at-cred-rows').appendChild(row);
+  }
+
+  function _credRowsToObject() {
+    var obj = {};
+    document.querySelectorAll('#at-cred-rows > div').forEach(function(row) {
+      var inputs = row.querySelectorAll('input[type=text]');
+      var k = inputs[0].value.trim(), v = inputs[1].value.trim();
+      if (k) obj[k] = v;
+    });
+    return obj;
+  }
+
+  function _objectToCredRows(obj) {
+    document.getElementById('at-cred-rows').innerHTML = '';
+    Object.entries(obj || {}).forEach(function(kv) { addCredRow(kv[0], kv[1]); });
   }
 
   function onYamlFileChange(event) {
     var file = event.target.files[0];
     if (!file) return;
     var reader = new FileReader();
-    reader.onload = function(e) {
-      document.getElementById('at-value-json').value = JSON.stringify(parseYaml(e.target.result), null, 2);
-      setValTab('json');
-    };
+    reader.onload = function(e) { _objectToCredRows(parseYaml(e.target.result)); };
     reader.readAsText(file);
     event.target.value = '';
   }
@@ -961,7 +949,8 @@
     prefix = prefix || 'param-';
     var id = prefix + p.name;
     if (p.type==='select') {
-      return '<select id="'+id+'">'+(p.options||[]).map(function(o){ return '<option value="'+esc(o)+'"'+(o===p.default?' selected':'')+'>'+esc(o)+'</option>'; }).join('')+'</select>';
+      var noneOpt = p.required ? '' : '<option value="">'+ esc(p.placeholder || '\u2014 none \u2014') +'</option>';
+      return '<select id="'+id+'">' + noneOpt + (p.options||[]).map(function(o){ return '<option value="'+esc(o)+'"'+(o===p.default?' selected':'')+'>'+esc(o)+'</option>'; }).join('') + '</select>';
     }
     if (p.type==='checkbox') {
       return '<div class="checkbox-row"><input type="checkbox" id="'+id+'"'+(p.default?' checked':'')+'><label for="'+id+'">'+esc(p.label)+'</label></div>';
@@ -1047,23 +1036,10 @@
     if (!t) return;
     _editingTokenId = id;
     document.getElementById('at-name').value = t.name || '';
-    document.getElementById('at-type').value = t.type || 'text';
-    var raw = typeof t.value === 'object' ? JSON.stringify(t.value, null, 2) : String(t.value);
-    if (typeof t.value === 'object') {
-      document.getElementById('at-value-json').value = raw;
-      document.getElementById('at-value-text').value = '';
-      setValTab('json');
-    } else {
-      document.getElementById('at-value-text').value = raw;
-      document.getElementById('at-value-json').value = '';
-      setValTab('text');
-    }
-    // Pre-fill metadata
-    var metaRows = document.getElementById('at-meta-rows');
-    metaRows.innerHTML = '';
-    Object.entries(t.meta || {}).forEach(function(kv) {
-      addMetaRow(kv[0], kv[1]);
-    });
+    var credObj = typeof t.value === 'object' ? t.value : {};
+    _objectToCredRows(credObj);
+    document.getElementById('at-meta-rows').innerHTML = '';
+    Object.entries(t.meta || {}).forEach(function(kv) { addMetaRow(kv[0], kv[1]); });
     document.querySelector('#add-token-overlay .modal-title').textContent = 'Edit Token';
     document.querySelector('#add-token-overlay .modal-footer .btn-primary').textContent = 'Save Changes';
     document.getElementById('add-token-overlay').classList.remove('hidden');
@@ -1073,11 +1049,8 @@
   function openAddToken() {
     _editingTokenId = null;
     document.getElementById('at-name').value = '';
-    document.getElementById('at-value-text').value = '';
-    document.getElementById('at-value-json').value = '';
     document.getElementById('at-meta-rows').innerHTML = '';
-    document.getElementById('at-type').value = 'credential_object';
-    setValTab('text');
+    _objectToCredRows({ url: '', email: '', api_token: '' });
     document.querySelector('#add-token-overlay .modal-title').textContent = 'Add Token';
     document.querySelector('#add-token-overlay .modal-footer .btn-primary').textContent = 'Add Token';
     document.getElementById('add-token-overlay').classList.remove('hidden');
@@ -1087,11 +1060,8 @@
   async function submitAddToken() {
     var name = document.getElementById('at-name').value.trim();
     if (!name) { alert('Name is required.'); return; }
-    var rawVal = valTab==='json' ? document.getElementById('at-value-json').value.trim() : document.getElementById('at-value-text').value;
-    var value;
-    if (valTab==='json' && rawVal) {
-      try { value = JSON.parse(rawVal); } catch(e) { alert('Invalid JSON:\n'+e.message); return; }
-    } else { value = rawVal; }
+    var value = _credRowsToObject();
+    if (!Object.keys(value).length) { alert('Add at least one credential field.'); return; }
     var metadata = {};
     document.querySelectorAll('#at-meta-rows > div').forEach(function(row) {
       var inputs = row.querySelectorAll('input');
@@ -1099,7 +1069,7 @@
       if (k) metadata[k] = v;
     });
     closeAddToken();
-    var payload = { name: name, value: value, type: document.getElementById('at-type').value, metadata: Object.keys(metadata).length ? metadata : null };
+    var payload = { name: name, value: value, type: 'credential_object', metadata: Object.keys(metadata).length ? metadata : null };
     if (_editingTokenId) {
       await fetch('/tokens/' + _editingTokenId, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
     } else {

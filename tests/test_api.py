@@ -99,7 +99,8 @@ def test_tool_parameters_have_required_fields(client):
 def test_confluence_exporter_has_expected_parameters(client):
     tool = next(t for t in client.get("/tools").json() if t["id"] == "confluence_exporter")
     param_names = {p["name"] for p in tool["parameters"]}
-    assert {"scope", "scope_value", "format", "output_dir", "depth", "force"} == param_names
+    assert {"scope", "scope_value", "format", "output_dir", "depth", "force",
+            "mode", "list_only", "scraper_fallback", "debug"} == param_names
 
 
 def test_confluence_exporter_scope_is_select(client):

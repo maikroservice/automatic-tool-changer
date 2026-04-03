@@ -1,24 +1,35 @@
 id: jira_exporter
 name: Jira Exporter
 description: >-
-  Export Jira issues to Markdown, HTML, or raw JSON. The token must be a
-  credential_object with url, email, and token (plus optional jira_type and
-  auth_type). Builds the jira-export CLI command.
+  Export Jira issues to Markdown, HTML, or raw JSON.
+  Supports Cloud and Server/Data Center. Token credential fields: url, email,
+  api_token (Cloud); url, username, password or api_token (Server).
+  Optionally set jira_type and auth_type.
 command: jira-export
 token_type: credential_object
 
 env:
   JIRA_URL:   [url, jira_url]
-  JIRA_EMAIL: [email, jira_email]
-  JIRA_TOKEN: [token, api_token, jira_token]
 
 optional_env:
   JIRA_TYPE:
-    from: [jira_type]
+    from: [jira_type, type]
     omit_if: ["", cloud]
   JIRA_AUTH_TYPE:
     from: [auth_type]
     omit_if: ["", basic]
+  JIRA_EMAIL:
+    from: [email, jira_email]
+    omit_if: [""]
+  JIRA_TOKEN:
+    from: [token, api_token, jira_token]
+    omit_if: [""]
+  JIRA_USERNAME:
+    from: [username, jira_username]
+    omit_if: [""]
+  JIRA_PASSWORD:
+    from: [password, jira_password]
+    omit_if: [""]
 
 args:
   - type: scope
@@ -32,6 +43,7 @@ args:
   - type: flag
     flag: --output
     param: output_dir
+    omit_if_empty: true
 
   - type: boolean
     flag: --comments
@@ -41,13 +53,22 @@ args:
     flag: --force
     param: force
 
+  - type: boolean
+    flag: --list
+    param: list_only
+
+  - type: boolean
+    flag: --debug
+    param: debug
+
 parameters:
   - name: scope
     type: select
     label: Scope
     options: [issue, project, board, jql]
-    default: project
-    required: true
+    default: ""
+    placeholder: "— default —"
+    required: false
 
   - name: scope_value
     type: text
@@ -79,5 +100,17 @@ parameters:
   - name: force
     type: checkbox
     label: Force overwrite existing files
+    default: false
+    required: false
+
+  - name: list_only
+    type: checkbox
+    label: Dry run (list what would be exported, no files written)
+    default: false
+    required: false
+
+  - name: debug
+    type: checkbox
+    label: Enable verbose debug output
     default: false
     required: false

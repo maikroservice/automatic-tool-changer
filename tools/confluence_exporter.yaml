@@ -1,17 +1,35 @@
 id: confluence_exporter
 name: Confluence Exporter
 description: >-
-  Export Confluence pages or spaces. The token must be a credential_object
-  with url, email, api_token, and optionally auth_type. Builds the
-  confluence-exporter CLI command.
+  Export Confluence pages or spaces to Markdown, HTML, or raw XML.
+  Supports Cloud and Server/Data Center via API or scraper mode.
+  Token credential fields: url, email, api_token (Cloud); url, username,
+  password or api_token (Server). Optionally set auth_type and confluence_type.
 command: confluence-exporter
 token_type: credential_object
 
 env:
-  CONFLUENCE_URL:       [url, confluence_url]
-  CONFLUENCE_AUTH_TYPE: [auth_type]
-  CONFLUENCE_EMAIL:     [email, confluence_email]
-  CONFLUENCE_TOKEN:     [api_token, confluence_token]
+  CONFLUENCE_URL:   [url, confluence_url]
+
+optional_env:
+  CONFLUENCE_TYPE:
+    from: [confluence_type, type]
+    omit_if: ["", cloud]
+  CONFLUENCE_AUTH_TYPE:
+    from: [auth_type]
+    omit_if: ["", basic]
+  CONFLUENCE_EMAIL:
+    from: [email, confluence_email]
+    omit_if: [""]
+  CONFLUENCE_TOKEN:
+    from: [api_token, confluence_token, token]
+    omit_if: [""]
+  CONFLUENCE_USERNAME:
+    from: [username, confluence_username]
+    omit_if: [""]
+  CONFLUENCE_PASSWORD:
+    from: [password, confluence_password]
+    omit_if: [""]
 
 args:
   - type: scope
@@ -25,29 +43,48 @@ args:
   - type: flag
     flag: --output
     param: output_dir
+    omit_if_empty: true
 
   - type: flag
     flag: --depth
     param: depth
     omit_if_empty: true
 
+  - type: flag
+    flag: --mode
+    param: mode
+    omit_if_empty: true
+
   - type: boolean
     flag: --force
     param: force
+
+  - type: boolean
+    flag: --list
+    param: list_only
+
+  - type: boolean
+    flag: --scraper-fallback
+    param: scraper_fallback
+
+  - type: boolean
+    flag: --debug
+    param: debug
 
 parameters:
   - name: scope
     type: select
     label: Scope
     options: [space, page, recursive]
-    default: space
-    required: true
+    default: ""
+    placeholder: "— default —"
+    required: false
 
   - name: scope_value
     type: text
     label: Space Key / Page URL or ID
     default: ""
-    placeholder: "MYSPACE  or  https://…/pages/123456"
+    placeholder: "MYSPACE  or  https://…/pages/123456  or  12345"
     required: true
 
   - name: format
@@ -60,8 +97,8 @@ parameters:
   - name: output_dir
     type: text
     label: Output Directory
-    default: ./output
-    placeholder: ./output
+    default: ./export
+    placeholder: ./export
     required: false
 
   - name: depth
@@ -71,8 +108,33 @@ parameters:
     placeholder: "unlimited (recursive scope only)"
     required: false
 
+  - name: mode
+    type: select
+    label: Mode
+    options: [api, scraper]
+    default: ""
+    required: false
+
   - name: force
     type: checkbox
     label: Force overwrite existing files
+    default: false
+    required: false
+
+  - name: list_only
+    type: checkbox
+    label: Dry run (list what would be exported, no files written)
+    default: false
+    required: false
+
+  - name: scraper_fallback
+    type: checkbox
+    label: Fall back to scraper mode on auth failure
+    default: false
+    required: false
+
+  - name: debug
+    type: checkbox
+    label: Enable verbose debug output
     default: false
     required: false

@@ -26,7 +26,7 @@ def test_confluence_exporter_injects_credentials():
     assert "CONFLUENCE_URL=https://company.atlassian.net/wiki" in cmd
     assert "CONFLUENCE_EMAIL=user@company.com" in cmd
     assert "CONFLUENCE_TOKEN=TOKEN123" in cmd
-    assert "CONFLUENCE_AUTH_TYPE=basic" in cmd
+    assert "CONFLUENCE_AUTH_TYPE" not in cmd  # basic is the default, omitted
 
 
 def test_confluence_exporter_page_scope():
