@@ -114,6 +114,16 @@ webhook_logs_table = Table(
     Column("success",       Boolean, nullable=False),
 )
 
+ingest_keys_table = Table(
+    "ingest_keys", metadata_obj,
+    Column("id",          String, primary_key=True),
+    Column("campaign_id", String, nullable=False),
+    Column("name",        String, nullable=False),
+    Column("key_hash",    String, nullable=False),
+    Column("created_at",  String, nullable=False),
+    Column("last_used_at", String),
+)
+
 
 # ── Schema init ────────────────────────────────────────────────────────────────
 
@@ -422,3 +432,45 @@ async def db_list_webhook_logs(conn: AsyncConnection, campaign_id: str,
         .limit(limit)
     )
     return [_row(r) for r in result]
+
+
+# ── Ingest key CRUD ────────────────────────────────────────────────────────────
+
+async def db_create_ingest_key(conn: AsyncConnection, *, id: str, campaign_id: str,
+                                name: str, key_hash: str) -> dict:
+    row = {"id": id, "campaign_id": campaign_id, "name": name,
+           "key_hash": key_hash, "created_at": _now(), "last_used_at": None}
+    await conn.execute(ingest_keys_table.insert().values(**row))
+    return {k: v for k, v in row.items() if k != "key_hash"}
+
+
+async def db_list_ingest_keys(conn: AsyncConnection, campaign_id: str) -> list[dict]:
+    result = await conn.execute(
+        ingest_keys_table.select()
+        .where(ingest_keys_table.c.campaign_id == campaign_id)
+        .order_by(ingest_keys_table.c.created_at.desc())
+    )
+    return [{k: v for k, v in _row(r).items() if k != "key_hash"} for r in result]
+
+
+async def db_get_ingest_key_by_hash(conn: AsyncConnection, key_hash: str) -> Optional[dict]:
+    result = await conn.execute(
+        ingest_keys_table.select().where(ingest_keys_table.c.key_hash == key_hash)
+    )
+    row = result.fetchone()
+    return _row(row) if row else None
+
+
+async def db_delete_ingest_key(conn: AsyncConnection, key_id: str) -> bool:
+    result = await conn.execute(
+        ingest_keys_table.delete().where(ingest_keys_table.c.id == key_id)
+    )
+    return result.rowcount > 0
+
+
+async def db_touch_ingest_key(conn: AsyncConnection, key_id: str) -> None:
+    await conn.execute(
+        ingest_keys_table.update()
+        .where(ingest_keys_table.c.id == key_id)
+        .values(last_used_at=_now())
+    )

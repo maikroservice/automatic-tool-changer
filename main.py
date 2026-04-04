@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import uuid
 from contextlib import asynccontextmanager
@@ -40,6 +41,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Automatic Tool Changer", lifespan=lifespan)
 
+# ── Auth dependency ────────────────────────────────────────────────────────────
+
+def _require_app_token(x_atc_token: str = Header(...)):
+    if not _secrets.compare_digest(x_atc_token, APP_TOKEN):
+        raise HTTPException(403, "Invalid or missing app token")
+
+
 # ── In-memory WebSocket list (not persisted) ───────────────────────────────────
 active_ws: list[WebSocket] = []
 
@@ -70,6 +78,17 @@ class AddTokenRequest(BaseModel):
     type: Optional[str] = "text"
     campaign_id: Optional[str] = None
     metadata: Optional[dict] = None
+
+
+class IngestRequest(BaseModel):
+    source: str
+    credentials: dict
+    name: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+class CreateIngestKeyRequest(BaseModel):
+    name: str
 
 
 class CreateRunRequest(BaseModel):
@@ -383,6 +402,110 @@ async def add_token(req: AddTokenRequest):
     return {"id": token_id, "token": token}
 
 
+# ── Ingest key management ──────────────────────────────────────────────────────
+
+def _hash_key(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+@app.post("/campaigns/{campaign_id}/ingest-keys",
+          summary="Generate an ingest key for a campaign",
+          dependencies=[Depends(_require_app_token)])
+async def create_ingest_key(campaign_id: str, req: CreateIngestKeyRequest):
+    async with engine.begin() as conn:
+        campaign = await db.db_get_campaign(conn, campaign_id)
+        if not campaign:
+            raise HTTPException(404, f"Campaign not found: {campaign_id}")
+        key = "atc_" + _secrets.token_hex(32)
+        key_id = str(uuid.uuid4())[:8]
+        record = await db.db_create_ingest_key(
+            conn, id=key_id, campaign_id=campaign_id,
+            name=req.name, key_hash=_hash_key(key),
+        )
+    await broadcast({"type": "ingest_key_added", "ingest_key": record})
+    return {**record, "key": key}
+
+
+@app.get("/campaigns/{campaign_id}/ingest-keys",
+         summary="List ingest keys for a campaign",
+         dependencies=[Depends(_require_app_token)])
+async def list_ingest_keys(campaign_id: str):
+    async with engine.begin() as conn:
+        return await db.db_list_ingest_keys(conn, campaign_id)
+
+
+@app.delete("/ingest-keys/{key_id}",
+            summary="Revoke an ingest key",
+            dependencies=[Depends(_require_app_token)])
+async def delete_ingest_key(key_id: str):
+    async with engine.begin() as conn:
+        deleted = await db.db_delete_ingest_key(conn, key_id)
+    if not deleted:
+        raise HTTPException(404, f"Ingest key not found: {key_id}")
+    await broadcast({"type": "ingest_key_deleted", "ingest_key_id": key_id})
+    return {"deleted": key_id}
+
+
+# ── Ingest endpoint ────────────────────────────────────────────────────────────
+
+@app.post("/ingest", summary="Programmatic token ingestion for external collectors")
+async def ingest(req: IngestRequest, x_ingest_key: str = Header(...)):
+    if not req.credentials:
+        raise HTTPException(422, "credentials must not be empty")
+
+    async with engine.begin() as conn:
+        key_record = await db.db_get_ingest_key_by_hash(conn, _hash_key(x_ingest_key))
+        if not key_record:
+            raise HTTPException(403, "Invalid or revoked ingest key")
+
+        campaign_id = key_record["campaign_id"]
+        await db.db_touch_ingest_key(conn, key_record["id"])
+
+        token_id = str(uuid.uuid4())[:8]
+        name = req.name or f"{req.source} @ {datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')}"
+        meta = {**(req.metadata or {}), "source": req.source}
+
+        token = await db.db_create_token(
+            conn, id=token_id, campaign_id=campaign_id,
+            name=name, value=req.credentials, type="credential_object",
+            created_by=None, meta=meta,
+        )
+
+        await broadcast({"type": "token_added", "token": token})
+
+        watchers = await db.db_list_watchers(conn, campaign_id)
+        runs_to_start = []
+
+        for watcher in watchers:
+            if not watcher["active"]:
+                continue
+            if watcher["token_type"] != token["type"] and watcher["token_type"] != "*":
+                continue
+            if watcher["tool_id"] not in TOOLS:
+                continue
+
+            run_id = str(uuid.uuid4())[:8]
+            run = await db.db_create_run(
+                conn, id=run_id, campaign_id=campaign_id,
+                tool_id=watcher["tool_id"],
+                tool_name=TOOLS[watcher["tool_id"]]["name"],
+                token_ids=[token_id], token_names=[token["name"]],
+                parameters=watcher["parameters"] or {},
+                triggered_by=watcher["id"], created_by=None,
+            )
+            await db.db_increment_watcher(conn, watcher["id"])
+            updated_watcher = await db.db_get_watcher(conn, watcher["id"])
+
+            await broadcast({"type": "run_created", "run": run})
+            await broadcast({"type": "watcher_updated", "watcher": updated_watcher})
+            runs_to_start.append(run_id)
+
+    for run_id in runs_to_start:
+        asyncio.create_task(run_in_background(run_id))
+
+    return {"id": token_id, "name": name, "token": token}
+
+
 @app.get("/tokens", summary="List tokens for the active campaign")
 async def list_tokens():
     async with engine.begin() as conn:
@@ -477,11 +600,6 @@ async def update_watcher(watcher_id: str, req: UpdateWatcherRequest):
 
 
 # ── Tool endpoints ─────────────────────────────────────────────────────────────
-
-def _require_app_token(x_atc_token: str = Header(...)):
-    if not _secrets.compare_digest(x_atc_token, APP_TOKEN):
-        raise HTTPException(403, "Invalid or missing app token")
-
 
 @app.get("/tools", summary="List available tools")
 async def list_tools():
@@ -622,6 +740,7 @@ async def websocket_endpoint(ws: WebSocket):
         runs = await db.db_list_runs(conn, active_id) if active_id else []
         watchers = await db.db_list_watchers(conn, active_id) if active_id else []
         webhook_logs = await db.db_list_webhook_logs(conn, active_id) if active_id else []
+        ingest_keys = await db.db_list_ingest_keys(conn, active_id) if active_id else []
 
     await ws.send_json({
         "type": "init",
@@ -632,6 +751,7 @@ async def websocket_endpoint(ws: WebSocket):
         "tools": [_tool_api(t) for t in TOOLS.values()],
         "watchers": watchers,
         "webhook_logs": webhook_logs,
+        "ingest_keys": ingest_keys,
         "app_token": APP_TOKEN,
     })
 
