@@ -97,6 +97,7 @@ def test_callback_stores_result(client):
     runs = client.get("/runs").json()
     run = next(x for x in runs if x["id"] == run_id)
     assert run["webhook_result"] == {"status": "success", "pages": 42}
+    assert run["status"] == "success"
 
 
 def test_callback_stores_error(client):
@@ -106,6 +107,36 @@ def test_callback_stores_error(client):
     runs = client.get("/runs").json()
     run = next(x for x in runs if x["id"] == run_id)
     assert run["error"] == "Tracecat workflow failed"
+    assert run["status"] == "failed_ext"
+
+
+def test_callback_with_result_sets_status_success(client):
+    run_id = _make_completed_run(client)
+    client.post(f"/runs/{run_id}/callback", json={"result": {"ok": True}})
+    run = next(x for x in client.get("/runs").json() if x["id"] == run_id)
+    assert run["status"] == "success"
+
+
+def test_callback_with_error_sets_status_failed_ext(client):
+    run_id = _make_completed_run(client)
+    client.post(f"/runs/{run_id}/callback", json={"error": "executor crashed"})
+    run = next(x for x in client.get("/runs").json() if x["id"] == run_id)
+    assert run["status"] == "failed_ext"
+
+
+def test_callback_broadcasts_run_updated_with_new_status(client, monkeypatch):
+    import copy
+    run_id = _make_completed_run(client)
+    broadcasts = []
+
+    async def fake_broadcast(msg):
+        broadcasts.append(copy.deepcopy(msg))
+
+    monkeypatch.setattr(main, "broadcast", fake_broadcast)
+    client.post(f"/runs/{run_id}/callback", json={"result": {"ok": True}})
+    run_msgs = [b for b in broadcasts if b.get("type") == "run_updated"]
+    assert len(run_msgs) == 1
+    assert run_msgs[0]["run"]["status"] == "success"
 
 
 def test_callback_not_found(client):

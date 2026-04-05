@@ -64,6 +64,10 @@
     .count-badge { font-size: .7rem; font-weight: 600; padding: .1rem .45rem; border-radius: 9999px; background: var(--card); color: var(--muted); min-width: 1.4rem; text-align: center; }
     .sel-hint    { font-size: .7rem; color: var(--accent-lt); }
     .section-body { flex: 1; overflow-y: auto; padding: .75rem; display: flex; flex-direction: column; gap: .5rem; }
+    .run-filters { display: flex; flex-wrap: wrap; gap: .3rem; padding: .4rem .75rem; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
+    .filter-pill { font-size: .65rem; font-weight: 600; padding: .2rem .55rem; border-radius: 9999px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-family: inherit; transition: all .12s; }
+    .filter-pill:hover { border-color: var(--accent-lt); color: var(--accent-lt); }
+    .filter-pill.active { background: rgba(99,102,241,.15); border-color: var(--accent); color: var(--accent-lt); }
 
     /* Sources sub-section */
     .sources-section { flex-shrink: 0; border-top: 2px solid var(--border); display: flex; flex-direction: column; max-height: 38%; }
@@ -72,10 +76,18 @@
     .sources-toggle { font-size: .65rem; color: var(--muted); transition: transform .2s; }
     .sources-toggle.open { transform: rotate(180deg); }
     .sources-body { overflow-y: auto; padding: .5rem .75rem; display: flex; flex-direction: column; gap: .35rem; }
-    .source-card { display: flex; align-items: center; justify-content: space-between; padding: .4rem .65rem; background: var(--card); border: 1px solid var(--border); border-radius: .4rem; font-size: .78rem; gap: .5rem; }
+    .source-card { display: flex; flex-direction: column; padding: .4rem .65rem; background: var(--card); border: 1px solid var(--border); border-radius: .4rem; font-size: .78rem; gap: .3rem; }
+    .source-card-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
     .source-card-info { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
     .source-card-name { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .source-card-meta { font-size: .68rem; color: var(--muted); }
+    .source-event-count { font-size: .62rem; font-weight: 500; padding: .05rem .35rem; background: rgba(99,102,241,.15); color: #a5b4fc; border-radius: .25rem; margin-left: .3rem; }
+    .source-event-list { display: flex; flex-direction: column; gap: .15rem; margin-top: .2rem; padding-top: .2rem; border-top: 1px solid var(--border); }
+    .source-event-row { display: flex; gap: .4rem; font-size: .65rem; color: var(--muted); align-items: center; }
+    .source-event-time { flex-shrink: 0; }
+    .source-event-src { font-weight: 500; color: var(--text); }
+    .source-event-tok { font-family: 'SF Mono','Fira Code',monospace; opacity: .6; }
+    .source-event-more { font-size: .63rem; color: var(--muted); padding-top: .1rem; }
     .source-key-reveal { font-family: monospace; font-size: .72rem; background: var(--surface); border: 1px solid var(--accent); border-radius: .35rem; padding: .5rem .75rem; word-break: break-all; color: var(--accent-lt); margin: .5rem 0; }
     .source-key-warn { font-size: .75rem; color: var(--warning); margin-bottom: .25rem; }
 
@@ -99,6 +111,7 @@
     .tc-meta   { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
     .meta-tag  { font-size: .65rem; padding: .1rem .35rem; background: var(--surface); border: 1px solid var(--border); border-radius: .2rem; color: var(--muted); }
     .tc-footer { margin-top: .4rem; font-size: .65rem; color: var(--muted); display: flex; justify-content: space-between; }
+    .tc-ingest-via { font-size: .68rem; color: var(--muted); margin-top: .3rem; }
 
     /* Watcher cards */
     .watcher-card {
@@ -129,7 +142,11 @@
     .status-badge.completed { background: rgba(16,185,129,.12);  color: #34d399; }
     .status-badge.triggered { background: rgba(20,184,166,.12);  color: #2dd4bf; }
     .status-badge.failed    { background: rgba(239,68,68,.12);   color: #f87171; }
-    .run-card.status-triggered { border-left-color: var(--teal); }
+    .run-card.status-triggered  { border-left-color: var(--teal); }
+    .run-card.status-success    { border-left-color: var(--success); }
+    .run-card.status-failed_ext { border-left-color: var(--danger); }
+    .status-badge.success    { background: rgba(16,185,129,.2);  color: #6ee7b7; }
+    .status-badge.failed_ext { background: rgba(239,68,68,.18); color: #fca5a5; }
     .play-btn { padding: .2rem .45rem; font-size: .78rem; background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.25); color: #34d399; border-radius: .3rem; cursor: pointer; transition: all .15s; font-family: inherit; }
     .play-btn:hover { background: rgba(16,185,129,.25); }
     .spinner { width: 9px; height: 9px; border: 1.5px solid rgba(96,165,250,.3); border-top-color: #60a5fa; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; flex-shrink: 0; }
@@ -139,6 +156,14 @@
     .rc-params  { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .3rem; }
     .param-chip { font-size: .65rem; font-family: 'SF Mono','Fira Code',monospace; padding: .1rem .4rem; background: var(--surface); border: 1px solid var(--border); border-radius: .25rem; color: var(--muted); }
     .auto-badge { font-size: .6rem; padding: .1rem .35rem; border-radius: 9999px; background: rgba(20,184,166,.12); color: #2dd4bf; border: 1px solid rgba(20,184,166,.2); margin-left: .25rem; }
+    .rc-chain { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; margin-bottom: .35rem; font-size: .72rem; }
+    .chain-badge { font-size: .62rem; padding: .1rem .4rem; border-radius: 9999px; border: 1px solid; white-space: nowrap; }
+    .watcher-badge { background: rgba(20,184,166,.1); color: #2dd4bf; border-color: rgba(20,184,166,.25); }
+    .chain-arrow { color: var(--muted); font-size: .7rem; }
+    .chain-status-badge { font-size: .62rem; padding: .1rem .4rem; border-radius: 9999px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .chain-status-badge.triggered  { background: rgba(20,184,166,.12); color: #2dd4bf; }
+    .chain-status-badge.success    { background: rgba(16,185,129,.2);  color: #6ee7b7; }
+    .chain-status-badge.failed_ext { background: rgba(239,68,68,.18); color: #fca5a5; }
     .rc-result      { margin-top: .4rem; }
     .result-label   { font-size: .65rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: .2rem; }
     .result-value   { font-family: 'SF Mono','Fira Code',monospace; font-size: .72rem; background: var(--surface); border: 1px solid var(--border); border-radius: .35rem; padding: .4rem .6rem; white-space: pre-wrap; word-break: break-all; max-height: 130px; overflow-y: auto; }
@@ -238,6 +263,26 @@
     }
     .log-drawer-title { font-size: .9rem; font-weight: 700; }
     .log-drawer-body  { flex: 1; overflow-y: auto; padding: .75rem; display: flex; flex-direction: column; gap: .5rem; }
+    .logs-tab-bar { display: flex; gap: .3rem; padding: .4rem .75rem; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+    .logs-tab { font-size: .67rem; font-weight: 600; padding: .2rem .6rem; border-radius: 9999px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-family: inherit; transition: all .12s; }
+    .logs-tab:hover { border-color: var(--accent-lt); color: var(--accent-lt); }
+    .logs-tab.active { background: rgba(99,102,241,.15); border-color: var(--accent); color: var(--accent-lt); }
+    .audit-row { display: flex; flex-direction: column; font-size: .74rem; border-radius: .35rem; background: var(--card); border: 1px solid var(--border); cursor: pointer; transition: border-color .12s; }
+    .audit-row:hover { border-color: var(--accent); }
+    .audit-row-summary { display: flex; gap: .5rem; align-items: center; padding: .45rem .5rem; }
+    .audit-time { font-size: .63rem; color: var(--muted); flex-shrink: 0; white-space: nowrap; }
+    .actor-badge { font-size: .6rem; font-weight: 700; padding: .1rem .35rem; border-radius: 9999px; flex-shrink: 0; white-space: nowrap; }
+    .actor-operator   { background: rgba(99,102,241,.15); color: #a5b4fc; }
+    .actor-watcher    { background: rgba(20,184,166,.12);  color: #2dd4bf; }
+    .actor-ingest_key { background: rgba(168,85,247,.12);  color: #c4b5fd; }
+    .actor-system     { background: rgba(107,114,128,.12); color: #9ca3af; }
+    .audit-action { font-weight: 600; color: var(--text); }
+    .audit-summary-hint { font-size: .65rem; color: var(--muted); margin-left: auto; flex-shrink: 0; }
+    .audit-expand { border-top: 1px solid var(--border); padding: .45rem .5rem; display: none; }
+    .audit-expand.open { display: block; }
+    .audit-expand-grid { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .75rem; font-size: .7rem; }
+    .audit-expand-key { color: var(--muted); font-weight: 500; white-space: nowrap; }
+    .audit-expand-val { font-family: 'SF Mono','Fira Code',monospace; color: var(--text); word-break: break-all; }
     .log-entry {
       background: var(--card); border: 1px solid var(--border); border-radius: .45rem;
       padding: .6rem .875rem; border-left: 3px solid var(--border);
@@ -301,7 +346,7 @@
       <span id="db-label">DB: –</span>
     </div>
     <div class="logs-btn-wrap">
-      <button class="btn btn-ghost" onclick="openLogs()" title="Webhook call log" id="logs-btn">Webhook Log</button>
+      <button class="btn btn-ghost" onclick="openLogs()" title="Webhook call log &amp; Audit log" id="logs-btn">Logs</button>
       <span class="err-badge" id="logs-err-badge" style="display:none">0</span>
     </div>
     <button class="btn btn-ghost" onclick="openUploadTool()" title="Register a tool via YAML">+ Add Tool</button>
@@ -367,6 +412,14 @@
       <div class="section-header">
         <span class="section-title">Runs</span>
         <span class="count-badge" id="run-count">0</span>
+      </div>
+      <div class="run-filters" id="run-filters">
+        <button class="filter-pill active" onclick="setRunFilter('all')">All</button>
+        <button class="filter-pill" onclick="setRunFilter('running')">Running</button>
+        <button class="filter-pill" onclick="setRunFilter('failed')">Failed</button>
+        <button class="filter-pill" onclick="setRunFilter('failed_ext')">Ext Failed</button>
+        <button class="filter-pill" onclick="setRunFilter('success')">Success</button>
+        <button class="filter-pill" onclick="setRunFilter('triggered')">Triggered</button>
       </div>
       <div class="section-body" id="runs-body">
         <div class="empty-state">
@@ -629,8 +682,12 @@
 <!-- ══ Log Drawer ══ -->
 <div class="log-drawer" id="log-drawer">
   <div class="log-drawer-header">
-    <span class="log-drawer-title">&#128221; Webhook Call Log</span>
+    <span class="log-drawer-title">&#128221; Logs</span>
     <button class="modal-close" onclick="closeLogs()">&#10005;</button>
+  </div>
+  <div class="logs-tab-bar" id="logs-tab-bar">
+    <button class="logs-tab active" onclick="setLogsTab('webhooks')">Webhooks</button>
+    <button class="logs-tab" onclick="setLogsTab('audit')">Audit</button>
   </div>
   <div class="log-drawer-body" id="log-drawer-body">
     <div class="empty-state">
@@ -645,7 +702,7 @@
 <div id="toast-container"></div>
 
 <script>
-  var state = { campaigns: {}, activeCampaignId: null, tokens: {}, runs: {}, tools: {}, watchers: {}, logs: [], ingestKeys: [], selected: new Set() };
+  var state = { campaigns: {}, activeCampaignId: null, tokens: {}, runs: {}, tools: {}, watchers: {}, logs: [], ingestKeys: [], ingestEvents: [], auditLog: [], logsTab: 'webhooks', runFilter: 'all', selected: new Set() };
   var _logErrCount = 0;
   var _appToken = '';
   var ws = null;
@@ -684,6 +741,8 @@
       state.activeCampaignId = msg.active_campaign_id || null;
       state.logs             = (msg.webhook_logs || []).slice().reverse(); // oldest first
       state.ingestKeys       = msg.ingest_keys || [];
+      state.ingestEvents     = (msg.ingest_events || []).slice().reverse();
+      state.auditLog         = (msg.audit_log || []).slice().reverse();
       _appToken = msg.app_token || '';
       _logErrCount = state.logs.filter(function(l){ return !l.success; }).length;
       updateLogBadge();
@@ -740,6 +799,9 @@
     } else if (msg.type === 'ingest_key_deleted') {
       state.ingestKeys = state.ingestKeys.filter(function(k){ return k.id !== msg.ingest_key_id; });
       renderSources();
+    } else if (msg.type === 'ingest_event') {
+      state.ingestEvents.push(msg.event);
+      renderSources();
     } else if (msg.type === 'tools_updated') {
       state.tools = toMap(msg.tools || []);
     } else if (msg.type === 'webhook_log') {
@@ -756,6 +818,14 @@
         showToast('Webhook fired', 'HTTP ' + msg.log.status_code + ' \u00b7 ' + trunc(msg.log.url || '', 50), 'success');
       }
       prependLogEntry(msg.log);
+      if (document.getElementById('log-drawer').classList.contains('open') && state.logsTab === 'webhooks') {
+        renderLogsDrawer();
+      }
+    } else if (msg.type === 'audit_event') {
+      state.auditLog.push(msg.entry);
+      if (document.getElementById('log-drawer').classList.contains('open') && state.logsTab === 'audit') {
+        renderLogsDrawer();
+      }
     }
   }
 
@@ -774,6 +844,13 @@
     var sel = state.selected.has(t.id);
     var raw = typeof t.value === 'object' ? JSON.stringify(t.value) : String(t.value);
     var meta = Object.entries(t.meta || {});
+    var ingestVia = t.meta && t.meta.ingest_key_name
+      ? '<div class="tc-ingest-via">Ingested via <strong>' + esc(t.meta.ingest_key_name) + '</strong></div>'
+      : '';
+    var runCount = Object.values(state.runs).filter(function(r){ return (r.token_ids || []).indexOf(t.id) !== -1; }).length;
+    var runLine = runCount > 0
+      ? '<div class="tc-ingest-via">Triggered <strong>' + runCount + '</strong> run' + (runCount === 1 ? '' : 's') + '</div>'
+      : '';
     return '<div class="token-card' + (sel ? ' selected' : '') + '" id="tc-' + t.id + '" onclick="toggleToken(\'' + t.id + '\')">'
       + '<div class="tc-top"><span class="tc-name">' + esc(t.name) + '</span>'
       + '<div style="display:flex;align-items:center;gap:.35rem">'
@@ -781,6 +858,7 @@
       + '<button class="btn-icon" title="Edit" onclick="event.stopPropagation();openEditToken(\'' + t.id + '\')">&#9998;</button>'
       + '</div></div>'
       + '<div class="tc-value" title="' + esc(raw) + '">' + esc(trunc(raw, 52)) + '</div>'
+      + ingestVia + runLine
       + (meta.length ? '<div class="tc-meta">' + meta.map(function(kv){ return '<span class="meta-tag">' + esc(kv[0]) + ': ' + esc(kv[1]) + '</span>'; }).join('') + '</div>' : '')
       + '<div class="tc-footer"><span>' + esc(t.id) + '</span><span>' + fmtTime(t.created_at) + '</span></div>'
       + '</div>';
@@ -833,16 +911,28 @@
   }
 
   // ── Runs ────────────────────────────────────────────────────────────────────
+  function setRunFilter(f) {
+    state.runFilter = f;
+    document.querySelectorAll('.filter-pill').forEach(function(el) {
+      el.classList.toggle('active', el.textContent.trim().toLowerCase().replace(' ', '_') === f || (f === 'all' && el.textContent.trim() === 'All'));
+    });
+    renderRuns();
+  }
+
   function renderRuns() {
-    var list = Object.values(state.runs).sort(function(a,b){ return b.created_at.localeCompare(a.created_at); });
-    document.getElementById('run-count').textContent = list.length;
+    var f = state.runFilter || 'all';
+    var all = Object.values(state.runs).sort(function(a,b){ return b.created_at.localeCompare(a.created_at); });
+    document.getElementById('run-count').textContent = all.length;
+    var list = f === 'all' ? all : all.filter(function(r){ return r.status === f; });
     var body = document.getElementById('runs-body');
     body.innerHTML = list.length === 0
-      ? '<div class="empty-state"><div class="empty-icon">&#128295;</div><div class="empty-title">No runs yet</div><div class="empty-sub">Runs appear here when tokens trigger a watcher</div></div>'
+      ? '<div class="empty-state"><div class="empty-icon">&#128295;</div><div class="empty-title">No runs' + (f !== 'all' ? ' with status &ldquo;' + esc(f) + '&rdquo;' : ' yet') + '</div><div class="empty-sub">Runs appear here when tokens trigger a watcher</div></div>'
       : list.map(runHtml).join('');
   }
 
   function prependRun(run) {
+    var f = state.runFilter || 'all';
+    if (f !== 'all' && run.status !== f) return;
     var body = document.getElementById('runs-body');
     if (body.querySelector('.empty-state')) body.innerHTML = '';
     body.insertAdjacentHTML('afterbegin', runHtml(run));
@@ -851,7 +941,24 @@
   function runHtml(r) {
     var params = Object.entries(r.parameters || {}).filter(function(kv){ return kv[1] !== '' && kv[1] !== false; });
     var dur = (r.started_at && r.completed_at) ? getDur(r.started_at, r.completed_at) : null;
-    var autoTag = r.triggered_by ? '<span class="auto-badge">auto</span>' : '';
+
+    // Chain line for auto-triggered runs
+    var chainLine = '';
+    var tokenPillsHtml = (r.token_names||[]).map(function(n){ return '<span class="token-pill">' + esc(n) + '</span>'; }).join('');
+    if (r.triggered_by) {
+      var w = state.watchers[r.triggered_by];
+      var wName = w ? w.name : r.triggered_by;
+      var webhookStatusBadge = '';
+      if (r.status === 'triggered' || r.status === 'success' || r.status === 'failed_ext') {
+        webhookStatusBadge = '<span class="chain-status-badge ' + r.status + '">' + r.status.replace('_', ' ') + '</span>';
+      }
+      chainLine = '<div class="rc-chain">'
+        + '<span class="chain-badge watcher-badge">&#8635; ' + esc(wName) + '</span>'
+        + '<span class="chain-arrow">&#8594;</span>'
+        + tokenPillsHtml
+        + (webhookStatusBadge ? '<span class="chain-arrow">&#8594;</span>' + webhookStatusBadge : '')
+        + '</div>';
+    }
 
     // Play button: show on completed manual runs when campaign has webhook configured
     var activeCampaign = state.campaigns[state.activeCampaignId];
@@ -864,7 +971,8 @@
       result = '<div class="rc-result"><div class="result-label">Command</div><div class="result-value">' + esc(JSON.stringify(r.result, null, 2)) + '</div></div>';
     }
     if (r.error) {
-      result += '<div class="rc-result"><div class="result-label">Error</div><div class="result-value error">' + esc(r.error) + '</div></div>';
+      var errLabel = r.status === 'failed_ext' ? 'Executor Error' : 'ATC Error';
+      result += '<div class="rc-result"><div class="result-label">' + errLabel + '</div><div class="result-value error">' + esc(r.error) + '</div></div>';
     }
     if (r.webhook_result !== null && r.webhook_result !== undefined) {
       result += '<div class="rc-result"><div class="result-label">Webhook Result</div><div class="result-value">' + esc(JSON.stringify(r.webhook_result, null, 2)) + '</div></div>';
@@ -872,12 +980,12 @@
 
     return '<div class="run-card status-' + r.status + '" id="rc-' + r.id + '">'
       + '<div class="rc-top">'
-      + '<span class="rc-name">' + esc(r.tool_name) + autoTag + '</span>'
+      + '<span class="rc-name">' + esc(r.tool_name) + '</span>'
       + '<div style="display:flex;align-items:center;gap:.4rem">'
       + playBtn
-      + '<span class="status-badge ' + r.status + '">' + (r.status==='running'?'<span class="spinner"></span>':'') + r.status + '</span>'
+      + '<span class="status-badge ' + r.status + '">' + (r.status==='running'?'<span class="spinner"></span>':'') + r.status.replace('_',' ') + '</span>'
       + '</div></div>'
-      + '<div class="rc-tokens">' + (r.token_names||[]).map(function(n){ return '<span class="token-pill">' + esc(n) + '</span>'; }).join('') + '</div>'
+      + (chainLine || ('<div class="rc-tokens">' + tokenPillsHtml + '</div>'))
       + (params.length ? '<div class="rc-params">' + params.map(function(kv){ return '<span class="param-chip">' + esc(kv[0]) + '=' + esc(String(kv[1])) + '</span>'; }).join('') + '</div>' : '')
       + result
       + '<div class="rc-footer"><span>' + fmtTime(r.created_at) + '</span>' + (dur ? '<span>' + dur + '</span>' : '') + '</div>'
@@ -902,20 +1010,46 @@
 
   function renderSources() {
     var keys = state.ingestKeys || [];
+    var events = state.ingestEvents || [];
     document.getElementById('source-count').textContent = keys.length;
     var body = document.getElementById('sources-body');
     if (!keys.length) {
       body.innerHTML = '<div style="font-size:.75rem;color:var(--muted);padding:.25rem .25rem .5rem">No sources yet — click &ldquo;+ Add Source&rdquo; to generate an ingest key.</div>';
       return;
     }
+    // Group events by ingest_key_id
+    var eventsByKey = {};
+    events.forEach(function(e) {
+      if (!eventsByKey[e.ingest_key_id]) eventsByKey[e.ingest_key_id] = [];
+      eventsByKey[e.ingest_key_id].push(e);
+    });
     body.innerHTML = keys.map(function(k) {
       var last = k.last_used_at ? 'Last used ' + fmtTime(k.last_used_at) : 'Never used';
+      var keyEvents = (eventsByKey[k.id] || []).slice().reverse(); // newest first
+      var countBadge = keyEvents.length > 0
+        ? ' <span class="source-event-count">' + keyEvents.length + ' ingest' + (keyEvents.length === 1 ? '' : 's') + '</span>'
+        : '';
+      var eventList = keyEvents.length > 0
+        ? '<div class="source-event-list">'
+          + keyEvents.slice(0, 5).map(function(e) {
+              return '<div class="source-event-row">'
+                + '<span class="source-event-time">' + fmtTime(e.ingested_at) + '</span>'
+                + '<span class="source-event-src">' + esc(e.source || '?') + '</span>'
+                + '<span class="source-event-tok">' + esc(e.token_id) + '</span>'
+                + '</div>';
+            }).join('')
+          + (keyEvents.length > 5 ? '<div class="source-event-more">+' + (keyEvents.length - 5) + ' more</div>' : '')
+          + '</div>'
+        : '';
       return '<div class="source-card">'
+        + '<div class="source-card-header">'
         + '<div class="source-card-info">'
-        + '<span class="source-card-name">' + esc(k.name) + '</span>'
+        + '<span class="source-card-name">' + esc(k.name) + countBadge + '</span>'
         + '<span class="source-card-meta">' + esc(last) + ' &middot; created ' + fmtTime(k.created_at) + '</span>'
         + '</div>'
         + '<button class="btn-icon danger" title="Revoke key" onclick="revokeSource(\'' + esc(k.id) + '\')">&#10005;</button>'
+        + '</div>'
+        + eventList
         + '</div>';
     }).join('');
   }
@@ -1602,11 +1736,27 @@
   // ── Log drawer ──────────────────────────────────────────────────────────────
   function openLogs() {
     document.getElementById('log-drawer').classList.add('open');
-    // Reset error badge when user opens the log
     _logErrCount = 0;
     updateLogBadge();
+    renderLogsDrawer();
   }
   function closeLogs() { document.getElementById('log-drawer').classList.remove('open'); }
+
+  function setLogsTab(tab) {
+    state.logsTab = tab;
+    document.querySelectorAll('.logs-tab').forEach(function(el) {
+      el.classList.toggle('active', el.textContent.trim().toLowerCase() === tab);
+    });
+    renderLogsDrawer();
+  }
+
+  function renderLogsDrawer() {
+    if (state.logsTab === 'audit') {
+      renderAuditRows();
+    } else {
+      renderWebhookRows();
+    }
+  }
 
   function updateLogBadge() {
     var badge = document.getElementById('logs-err-badge');
@@ -1619,19 +1769,91 @@
   }
 
   function renderLogs() {
+    renderWebhookRows();
+  }
+
+  function renderWebhookRows() {
     var body = document.getElementById('log-drawer-body');
     if (!state.logs.length) {
       body.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128203;</div><div class="empty-title">No webhook calls yet</div><div class="empty-sub">Calls appear here when webhooks fire</div></div>';
       return;
     }
-    // Most recent first
     body.innerHTML = state.logs.slice().reverse().map(logEntryHtml).join('');
   }
 
-  function prependLogEntry(log) {
+  function renderAuditRows() {
     var body = document.getElementById('log-drawer-body');
-    if (body.querySelector('.empty-state')) body.innerHTML = '';
-    body.insertAdjacentHTML('afterbegin', logEntryHtml(log));
+    var entries = state.auditLog.slice().reverse();
+    if (!entries.length) {
+      body.innerHTML = '<div class="empty-state"><div class="empty-icon">&#128196;</div><div class="empty-title">No audit entries yet</div><div class="empty-sub">Every action is recorded here</div></div>';
+      return;
+    }
+    body.innerHTML = entries.map(auditEntryHtml).join('');
+  }
+
+  function auditEntryHtml(e) {
+    var actorType = e.actor.split(':')[0];
+    var actorCls = 'actor-' + actorType;
+
+    // Build a one-line summary from the most useful detail fields
+    var summaryParts = [];
+    if (e.detail) {
+      if (e.detail.name)         summaryParts.push(esc(e.detail.name));
+      if (e.detail.source)       summaryParts.push('source: ' + esc(e.detail.source));
+      if (e.detail.tool_id)      summaryParts.push(esc(e.detail.tool_id));
+      if (e.detail.watcher_name) summaryParts.push('watcher: ' + esc(e.detail.watcher_name));
+    }
+    var summaryStr = summaryParts.length
+      ? '<span style="color:var(--muted);font-size:.68rem"> &middot; ' + summaryParts.join(' &middot; ') + '</span>'
+      : '';
+
+    // Build the expanded detail grid — every field in detail + fixed fields
+    var expandRows = '';
+    expandRows += '<div class="audit-expand-key">id</div><div class="audit-expand-val">' + esc(e.id) + '</div>';
+    expandRows += '<div class="audit-expand-key">timestamp</div><div class="audit-expand-val">' + esc(e.timestamp) + '</div>';
+    expandRows += '<div class="audit-expand-key">actor</div><div class="audit-expand-val">' + esc(e.actor) + '</div>';
+    expandRows += '<div class="audit-expand-key">action</div><div class="audit-expand-val">' + esc(e.action) + '</div>';
+    if (e.entity_type) expandRows += '<div class="audit-expand-key">entity</div><div class="audit-expand-val">' + esc(e.entity_type) + (e.entity_id ? ' / ' + esc(e.entity_id) : '') + '</div>';
+    if (e.campaign_id) expandRows += '<div class="audit-expand-key">campaign</div><div class="audit-expand-val">' + esc(e.campaign_id) + '</div>';
+    if (e.detail) {
+      // Skip keys already shown in the fixed header rows to avoid duplication
+      var skip = new Set(['id', 'campaign_id']);
+      Object.entries(e.detail).forEach(function(kv) {
+        if (skip.has(kv[0])) return;
+        var val = typeof kv[1] === 'object' ? JSON.stringify(kv[1], null, 2) : String(kv[1]);
+        expandRows += '<div class="audit-expand-key">' + esc(kv[0]) + '</div><div class="audit-expand-val">' + esc(val) + '</div>';
+      });
+    }
+
+    var rowId = 'audit-' + esc(e.id);
+    return '<div class="audit-row" id="' + rowId + '" onclick="toggleAuditRow(\'' + esc(e.id) + '\')">'
+      + '<div class="audit-row-summary">'
+      + '<span class="audit-time">' + fmtTime(e.timestamp) + '</span>'
+      + '<span class="actor-badge ' + actorCls + '">' + esc(e.actor) + '</span>'
+      + '<span class="audit-action">' + esc(e.action) + '</span>'
+      + summaryStr
+      + '<span class="audit-summary-hint">&#9660;</span>'
+      + '</div>'
+      + '<div class="audit-expand" id="audit-exp-' + esc(e.id) + '">'
+      + '<div class="audit-expand-grid">' + expandRows + '</div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function toggleAuditRow(id) {
+    var exp = document.getElementById('audit-exp-' + id);
+    if (!exp) return;
+    var isOpen = exp.classList.toggle('open');
+    var hint = exp.previousElementSibling && exp.previousElementSibling.querySelector('.audit-summary-hint');
+    if (hint) hint.textContent = isOpen ? '▲' : '▼';
+  }
+
+  function prependLogEntry(log) {
+    if (document.getElementById('log-drawer').classList.contains('open') && state.logsTab === 'webhooks') {
+      var body = document.getElementById('log-drawer-body');
+      if (body.querySelector('.empty-state')) body.innerHTML = '';
+      body.insertAdjacentHTML('afterbegin', logEntryHtml(log));
+    }
   }
 
   function logEntryHtml(l) {

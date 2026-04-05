@@ -294,12 +294,17 @@ async def create_campaign(req: CreateCampaignRequest):
             webhook_auth_header=req.webhook_auth_header,
             created_by=None,
         )
+        c_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=campaign_id, actor="operator",
+            action="campaign.created", entity_type="campaign", entity_id=campaign_id,
+            detail=dict(campaign))
         # If this is the first campaign, activate it automatically
         all_campaigns = await db.db_list_campaigns(conn)
         if len(all_campaigns) == 1:
             campaign = await db.db_activate_campaign(conn, campaign_id)
 
     await broadcast({"type": "campaign_added", "campaign": campaign})
+    await broadcast({"type": "audit_event", "entry": c_audit})
     return campaign
 
 
@@ -313,9 +318,14 @@ async def list_campaigns():
 async def activate_campaign(campaign_id: str):
     async with engine.begin() as conn:
         campaign = await db.db_activate_campaign(conn, campaign_id)
-    if not campaign:
-        raise HTTPException(404, "Campaign not found")
+        if not campaign:
+            raise HTTPException(404, "Campaign not found")
+        act_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=campaign_id, actor="operator",
+            action="campaign.activated", entity_type="campaign", entity_id=campaign_id,
+            detail=dict(campaign))
     await broadcast({"type": "campaign_activated", "campaign": campaign})
+    await broadcast({"type": "audit_event", "entry": act_audit})
     return campaign
 
 
@@ -364,8 +374,13 @@ async def add_token(req: AddTokenRequest):
             name=req.name, value=req.value, type=req.type,
             created_by=None, meta=req.metadata or {},
         )
+        token_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=campaign_id, actor="operator", action="token.created",
+            entity_type="token", entity_id=token_id,
+            detail=dict(token))
 
         await broadcast({"type": "token_added", "token": token})
+        await broadcast({"type": "audit_event", "entry": token_audit})
 
         # Auto-trigger matching active watchers for this campaign
         watchers = await db.db_list_watchers(conn, campaign_id)
@@ -388,11 +403,16 @@ async def add_token(req: AddTokenRequest):
                 parameters=watcher["parameters"] or {},
                 triggered_by=watcher["id"], created_by=None,
             )
+            run_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+                campaign_id=campaign_id, actor=f"watcher:{watcher['id']}",
+                action="run.created", entity_type="run", entity_id=run_id,
+                detail=dict(run))
             await db.db_increment_watcher(conn, watcher["id"])
             updated_watcher = await db.db_get_watcher(conn, watcher["id"])
 
             await broadcast({"type": "run_created", "run": run})
             await broadcast({"type": "watcher_updated", "watcher": updated_watcher})
+            await broadcast({"type": "audit_event", "entry": run_audit})
             runs_to_start.append(run_id)
 
     # Start background tasks outside the transaction
@@ -422,7 +442,12 @@ async def create_ingest_key(campaign_id: str, req: CreateIngestKeyRequest):
             conn, id=key_id, campaign_id=campaign_id,
             name=req.name, key_hash=_hash_key(key),
         )
+        key_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=campaign_id, actor="operator",
+            action="ingest_key.created", entity_type="ingest_key", entity_id=key_id,
+            detail={**record, "key_hash": _hash_key(key)})
     await broadcast({"type": "ingest_key_added", "ingest_key": record})
+    await broadcast({"type": "audit_event", "entry": key_audit})
     return {**record, "key": key}
 
 
@@ -439,10 +464,19 @@ async def list_ingest_keys(campaign_id: str):
             dependencies=[Depends(_require_app_token)])
 async def delete_ingest_key(key_id: str):
     async with engine.begin() as conn:
+        key_rec = await db.db_get_ingest_key_by_id(conn, key_id)
         deleted = await db.db_delete_ingest_key(conn, key_id)
+        rev_audit = None
+        if deleted and key_rec:
+            rev_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+                campaign_id=key_rec["campaign_id"], actor="operator",
+                action="ingest_key.revoked", entity_type="ingest_key", entity_id=key_id,
+                detail=dict(key_rec))
     if not deleted:
         raise HTTPException(404, f"Ingest key not found: {key_id}")
     await broadcast({"type": "ingest_key_deleted", "ingest_key_id": key_id})
+    if rev_audit:
+        await broadcast({"type": "audit_event", "entry": rev_audit})
     return {"deleted": key_id}
 
 
@@ -463,7 +497,9 @@ async def ingest(req: IngestRequest, x_ingest_key: str = Header(...)):
 
         token_id = str(uuid.uuid4())[:8]
         name = req.name or f"{req.source} @ {datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')}"
-        meta = {**(req.metadata or {}), "source": req.source}
+        meta = {**(req.metadata or {}), "source": req.source,
+                "ingest_key_id": key_record["id"],
+                "ingest_key_name": key_record["name"]}
 
         token = await db.db_create_token(
             conn, id=token_id, campaign_id=campaign_id,
@@ -472,6 +508,21 @@ async def ingest(req: IngestRequest, x_ingest_key: str = Header(...)):
         )
 
         await broadcast({"type": "token_added", "token": token})
+
+        event = await db.db_create_ingest_event(
+            conn, id=str(uuid.uuid4())[:8],
+            ingest_key_id=key_record["id"],
+            ingest_key_name=key_record["name"],
+            campaign_id=campaign_id,
+            source=req.source,
+            token_id=token_id,
+        )
+        token_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=campaign_id,
+            actor=f"ingest_key:{key_record['name']}",
+            action="token.created", entity_type="token", entity_id=token_id,
+            detail=dict(token))
+        await broadcast({"type": "audit_event", "entry": token_audit})
 
         watchers = await db.db_list_watchers(conn, campaign_id)
         runs_to_start = []
@@ -493,12 +544,19 @@ async def ingest(req: IngestRequest, x_ingest_key: str = Header(...)):
                 parameters=watcher["parameters"] or {},
                 triggered_by=watcher["id"], created_by=None,
             )
+            run_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+                campaign_id=campaign_id, actor=f"watcher:{watcher['id']}",
+                action="run.created", entity_type="run", entity_id=run_id,
+                detail=dict(run))
             await db.db_increment_watcher(conn, watcher["id"])
             updated_watcher = await db.db_get_watcher(conn, watcher["id"])
 
             await broadcast({"type": "run_created", "run": run})
             await broadcast({"type": "watcher_updated", "watcher": updated_watcher})
+            await broadcast({"type": "audit_event", "entry": run_audit})
             runs_to_start.append(run_id)
+
+    await broadcast({"type": "ingest_event", "event": event})
 
     for run_id in runs_to_start:
         asyncio.create_task(run_in_background(run_id))
@@ -513,6 +571,12 @@ async def list_tokens():
         if not campaign:
             return []
         return await db.db_list_tokens(conn, campaign["id"])
+
+
+@app.get("/tokens/{token_id}/runs", summary="List runs triggered by a token")
+async def list_runs_by_token(token_id: str):
+    async with engine.begin() as conn:
+        return await db.db_list_runs_by_token(conn, token_id)
 
 
 @app.patch("/tokens/{token_id}", summary="Update a token")
@@ -552,8 +616,13 @@ async def create_watcher(req: CreateWatcherRequest):
             name=req.name or f"{TOOLS[req.tool_id]['name']} on {req.token_type}",
             created_by=None,
         )
+        w_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=campaign["id"], actor="operator",
+            action="watcher.created", entity_type="watcher", entity_id=watcher_id,
+            detail=dict(watcher))
 
     await broadcast({"type": "watcher_added", "watcher": watcher})
+    await broadcast({"type": "audit_event", "entry": w_audit})
     return watcher
 
 
@@ -579,10 +648,19 @@ async def toggle_watcher(watcher_id: str):
 @app.delete("/watchers/{watcher_id}", summary="Delete a watcher")
 async def delete_watcher(watcher_id: str):
     async with engine.begin() as conn:
+        watcher = await db.db_get_watcher(conn, watcher_id)
         deleted = await db.db_delete_watcher(conn, watcher_id)
+        del_audit = None
+        if deleted and watcher:
+            del_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+                campaign_id=watcher["campaign_id"], actor="operator",
+                action="watcher.deleted", entity_type="watcher", entity_id=watcher_id,
+                detail=dict(watcher))
     if not deleted:
         raise HTTPException(404, "Watcher not found")
     await broadcast({"type": "watcher_deleted", "watcher_id": watcher_id})
+    if del_audit:
+        await broadcast({"type": "audit_event", "entry": del_audit})
     return {"status": "deleted"}
 
 
@@ -625,7 +703,13 @@ async def upload_tool(file: UploadFile):
     path.write_bytes(content)
 
     _reload_tools()
+    async with engine.begin() as conn:
+        tool_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=None, actor="operator",
+            action="tool.uploaded", entity_type="tool", entity_id=tool_id,
+            detail=_tool_api(TOOLS[tool_id]))
     await broadcast({"type": "tools_updated", "tools": [_tool_api(t) for t in TOOLS.values()]})
+    await broadcast({"type": "audit_event", "entry": tool_audit})
     return _tool_api(TOOLS[tool_id])
 
 
@@ -673,8 +757,13 @@ async def create_run(req: CreateRunRequest):
             parameters=req.parameters or {},
             triggered_by=None, created_by=None,
         )
+        run_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=campaign["id"], actor="operator",
+            action="run.created", entity_type="run", entity_id=run_id,
+            detail=dict(run))
 
     await broadcast({"type": "run_created", "run": run})
+    await broadcast({"type": "audit_event", "entry": run_audit})
     asyncio.create_task(run_in_background(run_id))
     return run
 
@@ -711,21 +800,33 @@ async def trigger_run(run_id: str, request: Request):
     return {"status": "firing"}
 
 
-@app.post("/runs/{run_id}/callback", summary="Receive Tracecat result callback")
+@app.post("/runs/{run_id}/callback", summary="Receive executor result callback")
 async def run_callback(run_id: str, req: RunCallbackRequest):
     async with engine.begin() as conn:
         run = await db.db_get_run(conn, run_id)
         if not run:
             raise HTTPException(404, "Run not found")
-        await db.db_update_run(conn, run_id,
-                               webhook_result=req.result,
-                               error=req.error or run.get("error"))
+        if req.error:
+            await db.db_update_run(conn, run_id, status="failed_ext",
+                                   webhook_result=req.result, error=req.error)
+        else:
+            await db.db_update_run(conn, run_id, status="success",
+                                   webhook_result=req.result)
         run = await db.db_get_run(conn, run_id)
     await broadcast({"type": "run_updated", "run": run})
     return {"status": "ok"}
 
 
 # ── WebSocket ──────────────────────────────────────────────────────────────────
+
+@app.get("/audit", summary="Immutable audit log for active campaign")
+async def list_audit():
+    async with engine.begin() as conn:
+        campaign = await db.db_get_active_campaign(conn)
+        if not campaign:
+            return []
+        return await db.db_list_audit(conn, campaign["id"])
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
@@ -741,6 +842,8 @@ async def websocket_endpoint(ws: WebSocket):
         watchers = await db.db_list_watchers(conn, active_id) if active_id else []
         webhook_logs = await db.db_list_webhook_logs(conn, active_id) if active_id else []
         ingest_keys = await db.db_list_ingest_keys(conn, active_id) if active_id else []
+        ingest_events = await db.db_list_ingest_events(conn, active_id) if active_id else []
+        audit_log = await db.db_list_audit(conn, active_id) if active_id else []
 
     await ws.send_json({
         "type": "init",
@@ -752,6 +855,8 @@ async def websocket_endpoint(ws: WebSocket):
         "watchers": watchers,
         "webhook_logs": webhook_logs,
         "ingest_keys": ingest_keys,
+        "ingest_events": ingest_events,
+        "audit_log": audit_log,
         "app_token": APP_TOKEN,
     })
 

@@ -238,3 +238,32 @@ def test_ingest_same_credentials_twice_creates_two_tokens(client, campaign):
     _ingest(client, {"source": "nophish", "credentials": CREDS}, key=key)
     _ingest(client, {"source": "nophish", "credentials": CREDS}, key=key)
     assert len(client.get("/tokens").json()) == 2
+
+
+# ── Token lineage meta ─────────────────────────────────────────────────────────
+
+def test_ingest_stores_ingest_key_id_in_meta(client, campaign):
+    body = _gen_key(client, campaign["id"])
+    key = body["key"]
+    key_id = body["id"]
+    r = _ingest(client, {"source": "nophish", "credentials": CREDS}, key=key)
+    token_id = r.json()["id"]
+    token = next(t for t in client.get("/tokens").json() if t["id"] == token_id)
+    assert token["meta"]["ingest_key_id"] == key_id
+
+
+def test_ingest_stores_ingest_key_name_in_meta(client, campaign):
+    key = _gen_key(client, campaign["id"])["key"]
+    r = _ingest(client, {"source": "nophish", "credentials": CREDS}, key=key)
+    token_id = r.json()["id"]
+    token = next(t for t in client.get("/tokens").json() if t["id"] == token_id)
+    assert token["meta"]["ingest_key_name"] == "test-key"
+
+
+def test_ingest_meta_does_not_expose_key_hash(client, campaign):
+    key = _gen_key(client, campaign["id"])["key"]
+    r = _ingest(client, {"source": "nophish", "credentials": CREDS}, key=key)
+    token_id = r.json()["id"]
+    token = next(t for t in client.get("/tokens").json() if t["id"] == token_id)
+    assert "key_hash" not in token["meta"]
+    assert "key" not in token["meta"]

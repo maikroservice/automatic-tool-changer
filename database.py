@@ -124,6 +124,17 @@ ingest_keys_table = Table(
     Column("last_used_at", String),
 )
 
+ingest_events_table = Table(
+    "ingest_events", metadata_obj,
+    Column("id",              String, primary_key=True),
+    Column("ingest_key_id",   String, nullable=False),
+    Column("ingest_key_name", String, nullable=False),
+    Column("campaign_id",     String, nullable=False),
+    Column("source",          String),
+    Column("token_id",        String),
+    Column("ingested_at",     String, nullable=False),
+)
+
 
 # ── Schema init ────────────────────────────────────────────────────────────────
 
@@ -278,6 +289,13 @@ async def db_update_token(conn: AsyncConnection, token_id: str, **kwargs) -> Opt
     if result.rowcount == 0:
         return None
     return await db_get_token(conn, token_id)
+
+
+async def db_list_runs_by_token(conn: AsyncConnection, token_id: str) -> list[dict]:
+    result = await conn.execute(
+        tool_runs_table.select().order_by(tool_runs_table.c.created_at.desc())
+    )
+    return [_row(r) for r in result if token_id in (r.token_ids or [])]
 
 
 # ── Watcher CRUD ───────────────────────────────────────────────────────────────
@@ -461,6 +479,14 @@ async def db_get_ingest_key_by_hash(conn: AsyncConnection, key_hash: str) -> Opt
     return _row(row) if row else None
 
 
+async def db_get_ingest_key_by_id(conn: AsyncConnection, key_id: str) -> Optional[dict]:
+    result = await conn.execute(
+        ingest_keys_table.select().where(ingest_keys_table.c.id == key_id)
+    )
+    row = result.fetchone()
+    return _row(row) if row else None  # includes key_hash — safe for internal/audit use
+
+
 async def db_delete_ingest_key(conn: AsyncConnection, key_id: str) -> bool:
     result = await conn.execute(
         ingest_keys_table.delete().where(ingest_keys_table.c.id == key_id)
@@ -474,3 +500,84 @@ async def db_touch_ingest_key(conn: AsyncConnection, key_id: str) -> None:
         .where(ingest_keys_table.c.id == key_id)
         .values(last_used_at=_now())
     )
+
+
+# ── Ingest event CRUD ──────────────────────────────────────────────────────────
+
+RUN_STATUSES = ("pending", "running", "completed", "triggered", "success", "failed", "failed_ext")
+
+
+async def db_create_ingest_event(conn: AsyncConnection, *, id: str, ingest_key_id: str,
+                                  ingest_key_name: str, campaign_id: str,
+                                  source: Optional[str], token_id: str) -> dict:
+    row = {
+        "id": id, "ingest_key_id": ingest_key_id, "ingest_key_name": ingest_key_name,
+        "campaign_id": campaign_id, "source": source,
+        "token_id": token_id, "ingested_at": _now(),
+    }
+    await conn.execute(ingest_events_table.insert().values(**row))
+    return row
+
+
+async def db_list_ingest_events(conn: AsyncConnection, campaign_id: str,
+                                 limit: int = 200) -> list[dict]:
+    result = await conn.execute(
+        ingest_events_table.select()
+        .where(ingest_events_table.c.campaign_id == campaign_id)
+        .order_by(ingest_events_table.c.ingested_at.desc())
+        .limit(limit)
+    )
+    return [_row(r) for r in result]
+
+
+# ── Audit log ──────────────────────────────────────────────────────────────────
+
+audit_log_table = Table(
+    "audit_log", metadata_obj,
+    Column("id",          String,  primary_key=True),
+    Column("campaign_id", String),               # nullable for global events (tool upload)
+    Column("actor",       String,  nullable=False),
+    Column("action",      String,  nullable=False),
+    Column("entity_type", String),
+    Column("entity_id",   String),
+    Column("detail",      _Json),
+    Column("timestamp",   String,  nullable=False),
+)
+
+
+async def db_append_audit(conn: AsyncConnection, *, id: str, campaign_id: Optional[str] = None,
+                           actor: str, action: str, entity_type: Optional[str] = None,
+                           entity_id: Optional[str] = None, detail: Optional[dict] = None) -> dict:
+    # Strip fields already captured as top-level audit columns to avoid ambiguous duplicates
+    if detail:
+        detail = {k: v for k, v in detail.items() if k not in ("id", "campaign_id")}
+    row = {
+        "id": id, "campaign_id": campaign_id, "actor": actor,
+        "action": action, "entity_type": entity_type,
+        "entity_id": entity_id, "detail": detail, "timestamp": _now(),
+    }
+    await conn.execute(audit_log_table.insert().values(**row))
+    return row
+
+
+async def db_list_audit(conn: AsyncConnection, campaign_id: Optional[str],
+                         limit: int = 500) -> list[dict]:
+    if campaign_id is not None:
+        result = await conn.execute(
+            audit_log_table.select()
+            .where(
+                (audit_log_table.c.campaign_id == campaign_id) |
+                (audit_log_table.c.campaign_id == None)  # noqa: E711
+            )
+            .order_by(audit_log_table.c.timestamp.desc())
+            .limit(limit)
+        )
+    else:
+        # global-only query (for tool events)
+        result = await conn.execute(
+            audit_log_table.select()
+            .where(audit_log_table.c.campaign_id == None)  # noqa: E711
+            .order_by(audit_log_table.c.timestamp.desc())
+            .limit(limit)
+        )
+    return [_row(r) for r in result]
