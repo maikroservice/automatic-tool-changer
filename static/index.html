@@ -688,6 +688,10 @@
   <div class="logs-tab-bar" id="logs-tab-bar">
     <button class="logs-tab active" onclick="setLogsTab('webhooks')">Webhooks</button>
     <button class="logs-tab" onclick="setLogsTab('audit')">Audit</button>
+    <div class="audit-export-btns" id="audit-export-btns" style="display:none;margin-left:auto;gap:.35rem;align-items:center;padding-right:.5rem;">
+      <button class="btn btn-ghost" style="font-size:.7rem;padding:.2rem .55rem;" onclick="downloadAuditCsv()" title="Download audit log as CSV">&#8659; CSV</button>
+      <button class="btn btn-ghost" style="font-size:.7rem;padding:.2rem .55rem;" onclick="downloadAuditPdf()" title="Download audit log as PDF">&#8659; PDF</button>
+    </div>
   </div>
   <div class="log-drawer-body" id="log-drawer-body">
     <div class="empty-state">
@@ -1738,6 +1742,7 @@
     document.getElementById('log-drawer').classList.add('open');
     _logErrCount = 0;
     updateLogBadge();
+    document.getElementById('audit-export-btns').style.display = state.logsTab === 'audit' ? 'flex' : 'none';
     renderLogsDrawer();
   }
   function closeLogs() { document.getElementById('log-drawer').classList.remove('open'); }
@@ -1747,6 +1752,7 @@
     document.querySelectorAll('.logs-tab').forEach(function(el) {
       el.classList.toggle('active', el.textContent.trim().toLowerCase() === tab);
     });
+    document.getElementById('audit-export-btns').style.display = tab === 'audit' ? 'flex' : 'none';
     renderLogsDrawer();
   }
 
@@ -1814,7 +1820,7 @@
     expandRows += '<div class="audit-expand-key">actor</div><div class="audit-expand-val">' + esc(e.actor) + '</div>';
     expandRows += '<div class="audit-expand-key">action</div><div class="audit-expand-val">' + esc(e.action) + '</div>';
     if (e.entity_type) expandRows += '<div class="audit-expand-key">entity</div><div class="audit-expand-val">' + esc(e.entity_type) + (e.entity_id ? ' / ' + esc(e.entity_id) : '') + '</div>';
-    if (e.campaign_id) expandRows += '<div class="audit-expand-key">campaign</div><div class="audit-expand-val">' + esc(e.campaign_id) + '</div>';
+    if (e.campaign_id) { var _cLabel = e.campaign_name ? esc(e.campaign_name) + ' <span style="opacity:.55">(' + esc(e.campaign_id) + ')</span>' : esc(e.campaign_id); expandRows += '<div class="audit-expand-key">campaign</div><div class="audit-expand-val">' + _cLabel + '</div>'; }
     if (e.detail) {
       // Skip keys already shown in the fixed header rows to avoid duplication
       var skip = new Set(['id', 'campaign_id']);
@@ -1846,6 +1852,61 @@
     var isOpen = exp.classList.toggle('open');
     var hint = exp.previousElementSibling && exp.previousElementSibling.querySelector('.audit-summary-hint');
     if (hint) hint.textContent = isOpen ? '▲' : '▼';
+  }
+
+  function _auditCsvRows() {
+    var cols = ['timestamp', 'action', 'actor', 'entity_type', 'entity_id', 'campaign_id', 'campaign_name', 'detail'];
+    var esc_csv = function(v) {
+      if (v == null) return '';
+      var s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      if (s.search(/[",\n\r]/) >= 0) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    };
+    var rows = [cols.join(',')];
+    state.auditLog.slice().reverse().forEach(function(e) {
+      rows.push(cols.map(function(c) { return esc_csv(e[c]); }).join(','));
+    });
+    return rows.join('\r\n');
+  }
+
+  function downloadAuditCsv() {
+    var csv = _auditCsvRows();
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'audit-log-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadAuditPdf() {
+    var entries = state.auditLog.slice().reverse();
+    var rows = entries.map(function(e) {
+      var detail = e.detail ? JSON.stringify(e.detail) : '';
+      var campaign = e.campaign_name ? e.campaign_name + (e.campaign_id ? ' (' + e.campaign_id + ')' : '') : (e.campaign_id || '');
+      return '<tr><td>' + [
+        esc(e.timestamp || ''), esc(e.action || ''), esc(e.actor || ''),
+        esc((e.entity_type || '') + (e.entity_id ? ' / ' + e.entity_id : '')),
+        esc(campaign), esc(detail)
+      ].join('</td><td>') + '</td></tr>';
+    }).join('');
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Audit Log</title>'
+      + '<style>body{font-family:sans-serif;font-size:11px;padding:1rem}'
+      + 'h2{margin-bottom:.75rem}table{border-collapse:collapse;width:100%}'
+      + 'th,td{border:1px solid #ccc;padding:.3rem .5rem;text-align:left;vertical-align:top;word-break:break-all}'
+      + 'th{background:#f0f0f0;font-weight:600}'
+      + 'tr:nth-child(even){background:#fafafa}'
+      + '@media print{body{padding:0}}'
+      + '</style></head><body>'
+      + '<h2>Audit Log &mdash; ' + esc(new Date().toISOString().slice(0, 10)) + '</h2>'
+      + '<table><thead><tr><th>Timestamp</th><th>Action</th><th>Actor</th><th>Entity</th><th>Campaign</th><th>Detail</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table>'
+      + '<script>window.onload=function(){window.print()}<\/script>'
+      + '</body></html>';
+    var w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
   }
 
   function prependLogEntry(log) {

@@ -332,23 +332,48 @@ async def activate_campaign(campaign_id: str):
 @app.delete("/campaigns/{campaign_id}", summary="Delete a campaign")
 async def delete_campaign(campaign_id: str):
     async with engine.begin() as conn:
+        campaign = await db.db_get_campaign(conn, campaign_id)
         deleted = await db.db_delete_campaign(conn, campaign_id)
+        del_audit = None
+        if deleted and campaign:
+            del_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+                campaign_id=campaign_id, actor="operator",
+                action="campaign.deleted", entity_type="campaign", entity_id=campaign_id,
+                detail=_mask_campaign(campaign))
     if not deleted:
         raise HTTPException(404, "Campaign not found")
     await broadcast({"type": "campaign_deleted", "campaign_id": campaign_id})
+    if del_audit:
+        await broadcast({"type": "audit_event", "entry": del_audit})
     return {"status": "deleted"}
+
+
+def _mask_campaign(c: dict) -> dict:
+    """Return a campaign snapshot safe to store in the audit log (secret masked)."""
+    masked = dict(c)
+    if masked.get("webhook_secret"):
+        masked["webhook_secret"] = "***"
+    return masked
 
 
 @app.patch("/campaigns/{campaign_id}", summary="Update a campaign")
 async def update_campaign(campaign_id: str, req: UpdateCampaignRequest):
     async with engine.begin() as conn:
+        before = await db.db_get_campaign(conn, campaign_id)
+        if not before:
+            raise HTTPException(404, "Campaign not found")
         campaign = await db.db_update_campaign(
             conn, campaign_id,
             **{k: v for k, v in req.model_dump().items() if v is not None},
         )
-    if not campaign:
-        raise HTTPException(404, "Campaign not found")
+        upd_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+                                 campaign_id=campaign_id, actor="operator",
+                                 action="campaign.updated",
+                                 entity_type="campaign", entity_id=campaign_id,
+                                 detail={"before": _mask_campaign(before),
+                                         "after": _mask_campaign(campaign)})
     await broadcast({"type": "campaign_updated", "campaign": campaign})
+    await broadcast({"type": "audit_event", "entry": upd_audit})
     return campaign
 
 
@@ -585,10 +610,16 @@ async def update_token(token_id: str, req: UpdateTokenRequest):
     if "metadata" in updates:
         updates["meta"] = updates.pop("metadata")
     async with engine.begin() as conn:
+        before = await db.db_get_token(conn, token_id)
+        if not before:
+            raise HTTPException(404, "Token not found")
         token = await db.db_update_token(conn, token_id, **updates)
-    if not token:
-        raise HTTPException(404, "Token not found")
+        token_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=token["campaign_id"], actor="operator",
+            action="token.updated", entity_type="token", entity_id=token_id,
+            detail={"before": before, "after": token})
     await broadcast({"type": "token_updated", "token": token})
+    await broadcast({"type": "audit_event", "entry": token_audit})
     return token
 
 
@@ -639,9 +670,17 @@ async def list_watchers():
 async def toggle_watcher(watcher_id: str):
     async with engine.begin() as conn:
         watcher = await db.db_toggle_watcher(conn, watcher_id)
+        toggle_audit = None
+        if watcher:
+            toggle_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+                campaign_id=watcher["campaign_id"], actor="operator",
+                action="watcher.toggled", entity_type="watcher", entity_id=watcher_id,
+                detail={"active": watcher["active"]})
     if not watcher:
         raise HTTPException(404, "Watcher not found")
     await broadcast({"type": "watcher_updated", "watcher": watcher})
+    if toggle_audit:
+        await broadcast({"type": "audit_event", "entry": toggle_audit})
     return watcher
 
 
@@ -667,13 +706,19 @@ async def delete_watcher(watcher_id: str):
 @app.patch("/watchers/{watcher_id}", summary="Update a watcher")
 async def update_watcher(watcher_id: str, req: UpdateWatcherRequest):
     async with engine.begin() as conn:
+        before = await db.db_get_watcher(conn, watcher_id)
+        if not before:
+            raise HTTPException(404, "Watcher not found")
         watcher = await db.db_update_watcher(
             conn, watcher_id,
             **{k: v for k, v in req.model_dump().items() if v is not None},
         )
-    if not watcher:
-        raise HTTPException(404, "Watcher not found")
+        watcher_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=watcher["campaign_id"], actor="operator",
+            action="watcher.updated", entity_type="watcher", entity_id=watcher_id,
+            detail={"before": before, "after": watcher})
     await broadcast({"type": "watcher_updated", "watcher": watcher})
+    await broadcast({"type": "audit_event", "entry": watcher_audit})
     return watcher
 
 
@@ -718,11 +763,18 @@ async def upload_tool(file: UploadFile):
 async def delete_tool(tool_id: str):
     if tool_id not in TOOLS:
         raise HTTPException(404, "Tool not found")
+    tool_snapshot = _tool_api(TOOLS[tool_id])
     path = Path(TOOLS_DIR) / f"{tool_id}.yaml"
     if path.exists():
         path.unlink()
     _reload_tools()
+    async with engine.begin() as conn:
+        tool_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=None, actor="operator",
+            action="tool.deleted", entity_type="tool", entity_id=tool_id,
+            detail=tool_snapshot)
     await broadcast({"type": "tools_updated", "tools": [_tool_api(t) for t in TOOLS.values()]})
+    await broadcast({"type": "audit_event", "entry": tool_audit})
     return {"status": "deleted"}
 
 
@@ -795,6 +847,13 @@ async def trigger_run(run_id: str, request: Request):
     if run["status"] != "completed":
         raise HTTPException(400, f"Run is not completed (status: {run['status']})")
 
+    async with engine.begin() as conn:
+        trigger_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=run["campaign_id"], actor="operator",
+            action="run.webhook_triggered", entity_type="run", entity_id=run_id,
+            detail={"run_id": run_id, "tool_id": run["tool_id"]})
+    await broadcast({"type": "audit_event", "entry": trigger_audit})
+
     base_url = str(request.base_url)
     asyncio.create_task(_fire_webhook(run_id, base_url))
     return {"status": "firing"}
@@ -813,7 +872,12 @@ async def run_callback(run_id: str, req: RunCallbackRequest):
             await db.db_update_run(conn, run_id, status="success",
                                    webhook_result=req.result)
         run = await db.db_get_run(conn, run_id)
+        cb_audit = await db.db_append_audit(conn, id=str(uuid.uuid4())[:8],
+            campaign_id=run["campaign_id"], actor="executor",
+            action="run.callback_received", entity_type="run", entity_id=run_id,
+            detail={"status": run["status"], "error": req.error})
     await broadcast({"type": "run_updated", "run": run})
+    await broadcast({"type": "audit_event", "entry": cb_audit})
     return {"status": "ok"}
 
 

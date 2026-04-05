@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import (
-    Boolean, Column, Integer, MetaData, String, Table, text
+    Boolean, Column, Index, Integer, MetaData, String, Table, text
 )
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection, create_async_engine
 
@@ -543,6 +543,7 @@ audit_log_table = Table(
     Column("detail",      _Json),
     Column("timestamp",   String,  nullable=False),
 )
+Index("ix_audit_log_campaign_id", audit_log_table.c.campaign_id)
 
 
 async def db_append_audit(conn: AsyncConnection, *, id: str, campaign_id: Optional[str] = None,
@@ -560,24 +561,30 @@ async def db_append_audit(conn: AsyncConnection, *, id: str, campaign_id: Option
     return row
 
 
+def _audit_select():
+    """Audit rows joined with campaigns to include campaign_name."""
+    j = audit_log_table.outerjoin(
+        campaigns_table, audit_log_table.c.campaign_id == campaigns_table.c.id
+    )
+    return (
+        audit_log_table.select()
+        .add_columns(campaigns_table.c.name.label("campaign_name"))
+        .select_from(j)
+    )
+
+
 async def db_list_audit(conn: AsyncConnection, campaign_id: Optional[str],
                          limit: int = 500) -> list[dict]:
+    q = _audit_select()
     if campaign_id is not None:
-        result = await conn.execute(
-            audit_log_table.select()
-            .where(
-                (audit_log_table.c.campaign_id == campaign_id) |
-                (audit_log_table.c.campaign_id == None)  # noqa: E711
-            )
-            .order_by(audit_log_table.c.timestamp.desc())
-            .limit(limit)
+        q = q.where(
+            (audit_log_table.c.campaign_id == campaign_id) |
+            (audit_log_table.c.campaign_id == None)  # noqa: E711
         )
     else:
         # global-only query (for tool events)
-        result = await conn.execute(
-            audit_log_table.select()
-            .where(audit_log_table.c.campaign_id == None)  # noqa: E711
-            .order_by(audit_log_table.c.timestamp.desc())
-            .limit(limit)
-        )
+        q = q.where(audit_log_table.c.campaign_id == None)  # noqa: E711
+    result = await conn.execute(
+        q.order_by(audit_log_table.c.timestamp.desc()).limit(limit)
+    )
     return [_row(r) for r in result]

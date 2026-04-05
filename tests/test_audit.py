@@ -286,3 +286,229 @@ def test_audit_entries_ordered_newest_first(client, campaign):
     assert len(token_entries) >= 2
     # Newest first
     assert token_entries[0]["timestamp"] >= token_entries[1]["timestamp"]
+
+
+# ── Campaign update events ─────────────────────────────────────────────────────
+
+def test_campaign_update_creates_audit_entry(client, campaign):
+    client.patch(f"/campaigns/{campaign['id']}",
+                 json={"name": "Renamed"}, headers=_auth())
+    entries = _get_audit(campaign["id"])
+    update_entries = [e for e in entries if e["action"] == "campaign.updated"]
+    assert len(update_entries) == 1
+    assert update_entries[0]["actor"] == "operator"
+    assert update_entries[0]["entity_type"] == "campaign"
+    assert update_entries[0]["entity_id"] == campaign["id"]
+
+
+def test_campaign_update_detail_has_before_and_after(client, campaign):
+    client.patch(f"/campaigns/{campaign['id']}",
+                 json={"name": "New Name"}, headers=_auth())
+    entries = _get_audit(campaign["id"])
+    e = next(x for x in entries if x["action"] == "campaign.updated")
+    assert "before" in e["detail"]
+    assert "after" in e["detail"]
+    assert e["detail"]["before"]["name"] == campaign["name"]
+    assert e["detail"]["after"]["name"] == "New Name"
+
+
+def test_campaign_update_secret_is_masked_in_audit(client, campaign):
+    client.patch(f"/campaigns/{campaign['id']}",
+                 json={"webhook_secret": "super-secret-value"}, headers=_auth())
+    entries = _get_audit(campaign["id"])
+    e = next(x for x in entries if x["action"] == "campaign.updated")
+    detail_str = str(e["detail"])
+    assert "super-secret-value" not in detail_str
+    # masked placeholder must be present instead
+    assert e["detail"]["after"]["webhook_secret"] == "***"
+
+
+# ── Campaign name on audit rows (via JOIN) ─────────────────────────────────────
+
+def test_audit_rows_include_campaign_name(client, campaign):
+    """db_list_audit must JOIN campaigns so campaign_name is present on each row."""
+    add_token(client, "creds", CREDS, type="credential_object")
+    entries = _get_audit(campaign["id"])
+    campaign_entries = [e for e in entries if e.get("campaign_id")]
+    assert campaign_entries
+    for e in campaign_entries:
+        assert "campaign_name" in e, f"missing campaign_name on {e['id']}"
+        assert e["campaign_name"] == campaign["name"]
+
+
+def test_audit_campaign_name_reflects_current_name(client, campaign):
+    """After a rename, all audit rows for that campaign show the new name."""
+    add_token(client, "creds", CREDS, type="credential_object")
+    client.patch(f"/campaigns/{campaign['id']}",
+                 json={"name": "Renamed Campaign"}, headers=_auth())
+    entries = _get_audit(campaign["id"])
+    campaign_entries = [e for e in entries if e.get("campaign_id")]
+    assert campaign_entries
+    for e in campaign_entries:
+        assert e["campaign_name"] == "Renamed Campaign"
+
+
+# ── Campaign deleted events ────────────────────────────────────────────────────
+
+def test_campaign_deleted_creates_audit_entry(client, campaign):
+    c2 = add_campaign(client, "To Delete")
+    client.delete(f"/campaigns/{c2['id']}")
+    entries = _get_audit(c2["id"])
+    del_entries = [e for e in entries if e["action"] == "campaign.deleted"]
+    assert len(del_entries) == 1
+    assert del_entries[0]["actor"] == "operator"
+    assert del_entries[0]["entity_type"] == "campaign"
+    assert del_entries[0]["entity_id"] == c2["id"]
+
+
+def test_campaign_deleted_detail_masks_secret(client, campaign):
+    c2 = add_campaign(client, "Secret Camp", webhook_secret="my-secret")
+    client.delete(f"/campaigns/{c2['id']}")
+    entries = _get_audit(c2["id"])
+    e = next(x for x in entries if x["action"] == "campaign.deleted")
+    assert "my-secret" not in str(e["detail"])
+    assert e["detail"]["webhook_secret"] == "***"
+
+
+# ── Token updated events ───────────────────────────────────────────────────────
+
+def test_token_update_creates_audit_entry(client, campaign):
+    tok = add_token(client, "original", CREDS, type="credential_object")
+    client.patch(f"/tokens/{tok['id']}", json={"name": "renamed"})
+    entries = _get_audit(campaign["id"])
+    upd_entries = [e for e in entries if e["action"] == "token.updated"]
+    assert len(upd_entries) == 1
+    assert upd_entries[0]["actor"] == "operator"
+    assert upd_entries[0]["entity_type"] == "token"
+    assert upd_entries[0]["entity_id"] == tok["id"]
+
+
+def test_token_update_detail_has_before_and_after(client, campaign):
+    tok = add_token(client, "original", CREDS, type="credential_object")
+    client.patch(f"/tokens/{tok['id']}", json={"name": "renamed"})
+    entries = _get_audit(campaign["id"])
+    e = next(x for x in entries if x["action"] == "token.updated")
+    assert e["detail"]["before"]["name"] == "original"
+    assert e["detail"]["after"]["name"] == "renamed"
+
+
+# ── Watcher toggled events ─────────────────────────────────────────────────────
+
+def test_watcher_toggle_creates_audit_entry(client, campaign):
+    r = client.post("/watchers", json={"tool_id": "confluence_exporter",
+                                       "token_type": "credential_object", "name": "W1"})
+    watcher_id = r.json()["id"]
+    client.patch(f"/watchers/{watcher_id}/toggle")
+    entries = _get_audit(campaign["id"])
+    tog_entries = [e for e in entries if e["action"] == "watcher.toggled"]
+    assert len(tog_entries) == 1
+    assert tog_entries[0]["actor"] == "operator"
+    assert tog_entries[0]["entity_id"] == watcher_id
+
+
+def test_watcher_toggle_detail_includes_new_active_state(client, campaign):
+    r = client.post("/watchers", json={"tool_id": "confluence_exporter",
+                                       "token_type": "credential_object", "name": "W1"})
+    watcher_id = r.json()["id"]
+    # Toggle off (was active=True)
+    client.patch(f"/watchers/{watcher_id}/toggle")
+    entries = _get_audit(campaign["id"])
+    e = next(x for x in entries if x["action"] == "watcher.toggled")
+    assert e["detail"]["active"] is False
+
+
+# ── Watcher updated events ─────────────────────────────────────────────────────
+
+def test_watcher_update_creates_audit_entry(client, campaign):
+    r = client.post("/watchers", json={"tool_id": "confluence_exporter",
+                                       "token_type": "credential_object", "name": "W1"})
+    watcher_id = r.json()["id"]
+    client.patch(f"/watchers/{watcher_id}", json={"name": "W1-renamed"})
+    entries = _get_audit(campaign["id"])
+    upd_entries = [e for e in entries if e["action"] == "watcher.updated"]
+    assert len(upd_entries) == 1
+    assert upd_entries[0]["actor"] == "operator"
+    assert upd_entries[0]["entity_id"] == watcher_id
+
+
+def test_watcher_update_detail_has_before_and_after(client, campaign):
+    r = client.post("/watchers", json={"tool_id": "confluence_exporter",
+                                       "token_type": "credential_object", "name": "W1"})
+    watcher_id = r.json()["id"]
+    client.patch(f"/watchers/{watcher_id}", json={"name": "W1-renamed"})
+    entries = _get_audit(campaign["id"])
+    e = next(x for x in entries if x["action"] == "watcher.updated")
+    assert e["detail"]["before"]["name"] == "W1"
+    assert e["detail"]["after"]["name"] == "W1-renamed"
+
+
+# ── Tool deleted events ────────────────────────────────────────────────────────
+
+def test_tool_delete_creates_audit_entry(client, campaign):
+    import io
+    from pathlib import Path
+    import main as _main
+    yaml_content = b"""id: test_tool\nname: Test Tool\ndescription: desc\ncommand: test\nparameters: []\n"""
+    client.post("/tools", files={"file": ("test_tool.yaml", io.BytesIO(yaml_content), "text/yaml")},
+                headers=_auth())
+    client.delete("/tools/test_tool", headers=_auth())
+    entries = _get_audit(None)
+    del_entries = [e for e in entries if e["action"] == "tool.deleted"]
+    assert len(del_entries) == 1
+    assert del_entries[0]["actor"] == "operator"
+    assert del_entries[0]["entity_id"] == "test_tool"
+
+
+# ── Run webhook_triggered events ──────────────────────────────────────────────
+
+def test_run_trigger_creates_audit_entry(client, campaign):
+    import asyncio
+    tok = add_token(client, "creds", CREDS, type="credential_object")
+
+    # Create and manually complete a run so we can trigger it
+    run_resp = client.post("/runs", json={"tool_id": "confluence_exporter",
+                                          "token_ids": [tok["id"]], "parameters": {}})
+    run_id = run_resp.json()["id"]
+
+    async def _complete_run():
+        async with engine.begin() as conn:
+            await db.db_update_run(conn, run_id, status="completed")
+
+    loop = asyncio.new_event_loop()
+    loop.run_until_complete(_complete_run())
+    loop.close()
+
+    client.post(f"/runs/{run_id}/trigger")
+    entries = _get_audit(campaign["id"])
+    trig_entries = [e for e in entries if e["action"] == "run.webhook_triggered"]
+    assert len(trig_entries) == 1
+    assert trig_entries[0]["actor"] == "operator"
+    assert trig_entries[0]["entity_id"] == run_id
+
+
+# ── Run callback_received events ───────────────────────────────────────────────
+
+def test_run_callback_creates_audit_entry(client, campaign):
+    tok = add_token(client, "creds", CREDS, type="credential_object")
+    run_resp = client.post("/runs", json={"tool_id": "confluence_exporter",
+                                          "token_ids": [tok["id"]], "parameters": {}})
+    run_id = run_resp.json()["id"]
+    client.post(f"/runs/{run_id}/callback", json={"result": {"output": "done"}})
+    entries = _get_audit(campaign["id"])
+    cb_entries = [e for e in entries if e["action"] == "run.callback_received"]
+    assert len(cb_entries) == 1
+    assert cb_entries[0]["actor"] == "executor"
+    assert cb_entries[0]["entity_id"] == run_id
+
+
+def test_run_callback_error_creates_audit_entry_with_failed_ext_status(client, campaign):
+    tok = add_token(client, "creds", CREDS, type="credential_object")
+    run_resp = client.post("/runs", json={"tool_id": "confluence_exporter",
+                                          "token_ids": [tok["id"]], "parameters": {}})
+    run_id = run_resp.json()["id"]
+    client.post(f"/runs/{run_id}/callback", json={"error": "timeout"})
+    entries = _get_audit(campaign["id"])
+    cb_entries = [e for e in entries if e["action"] == "run.callback_received"]
+    assert len(cb_entries) == 1
+    assert cb_entries[0]["detail"]["status"] == "failed_ext"
+    assert cb_entries[0]["detail"]["error"] == "timeout"
